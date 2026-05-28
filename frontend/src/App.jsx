@@ -15,7 +15,18 @@ export default function App() {
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    hydrate().finally(() => setReady(true));
+    hydrate().finally(() => {
+      // DEV: seed auth state so protected routes render without a backend
+      const state = useAuthStore.getState();
+      if (!state.isAuthenticated && import.meta.env.DEV) {
+        useAuthStore.setState({
+          isAuthenticated: true,
+          user: { id: 'dev', name: 'Dev User', email: 'dev@smartcrm.io', role: 'business_admin' },
+          accessToken: 'dev-token',
+        });
+      }
+      setReady(true);
+    });
   }, [hydrate]);
 
   if (!ready) {
