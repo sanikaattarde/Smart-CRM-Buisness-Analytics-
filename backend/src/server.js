@@ -1,15 +1,30 @@
 'use strict';
 
+const http = require('http');
 const app = require('./app');
 const env = require('./config/env');
 const logger = require('./shared/logger');
 const { pool } = require('./config/db');
 const redis = require('./config/redis');
+const { initSocketIO } = require('./sockets');
 
-const server = app.listen(env.PORT, () => {
+// ---------------------------------------------------------------------------
+// HTTP server + Socket.IO binding
+// ---------------------------------------------------------------------------
+
+const httpServer = http.createServer(app);
+const io = initSocketIO(httpServer);
+
+// Expose io on the Express app so any route/service can emit events:
+//   const io = req.app.get('io');
+//   emitLeadStageChanged(io, orgId, payload);
+app.set('io', io);
+
+httpServer.listen(env.PORT, () => {
   logger.info(`SmartCRM API listening on port ${env.PORT}`, {
     env: env.NODE_ENV,
     pid: process.pid,
+    socketIO: true,
   });
 });
 
@@ -19,7 +34,16 @@ const server = app.listen(env.PORT, () => {
 const shutdown = async (signal) => {
   logger.info(`${signal} received — initiating graceful shutdown`);
 
-  server.close(async () => {
+  // 1. Close Socket.IO (disconnects all sockets)
+  try {
+    await new Promise((resolve) => io.close(resolve));
+    logger.info('Socket.IO server closed');
+  } catch (err) {
+    logger.error('Error closing Socket.IO', { error: err.message });
+  }
+
+  // 2. Close HTTP server (stop accepting new connections)
+  httpServer.close(async () => {
     logger.info('HTTP server closed');
 
     try {
@@ -58,4 +82,5 @@ process.on('uncaughtException', (err) => {
   shutdown('uncaughtException');
 });
 
-module.exports = server;
+module.exports = httpServer;
+
