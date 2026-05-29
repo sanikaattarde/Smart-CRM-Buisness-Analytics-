@@ -7,6 +7,8 @@ const logger = require('./shared/logger');
 const { pool } = require('./config/db');
 const redis = require('./config/redis');
 const { initSocketIO } = require('./sockets');
+const { initWorkers, shutdownWorkers } = require('./jobs/worker');
+const { registerSchedules } = require('./jobs/queue');
 
 // ---------------------------------------------------------------------------
 // HTTP server + Socket.IO binding
@@ -20,12 +22,20 @@ const io = initSocketIO(httpServer);
 //   emitLeadStageChanged(io, orgId, payload);
 app.set('io', io);
 
-httpServer.listen(env.PORT, () => {
+// Expose io globally for background jobs that run outside the Express
+// request context (they can't access req.app.get('io')).
+global.__io = io;
+
+httpServer.listen(env.PORT, async () => {
   logger.info(`SmartCRM API listening on port ${env.PORT}`, {
     env: env.NODE_ENV,
     pid: process.pid,
     socketIO: true,
   });
+
+  // Start BullMQ workers and register cron schedules
+  initWorkers();
+  await registerSchedules();
 });
 
 // ---------------------------------------------------------------------------
@@ -34,7 +44,14 @@ httpServer.listen(env.PORT, () => {
 const shutdown = async (signal) => {
   logger.info(`${signal} received — initiating graceful shutdown`);
 
-  // 1. Close Socket.IO (disconnects all sockets)
+  // 1. Drain BullMQ workers (let in-flight jobs finish)
+  try {
+    await shutdownWorkers();
+  } catch (err) {
+    logger.error('Error shutting down BullMQ workers', { error: err.message });
+  }
+
+  // 2. Close Socket.IO (disconnects all sockets)
   try {
     await new Promise((resolve) => io.close(resolve));
     logger.info('Socket.IO server closed');
@@ -42,7 +59,7 @@ const shutdown = async (signal) => {
     logger.error('Error closing Socket.IO', { error: err.message });
   }
 
-  // 2. Close HTTP server (stop accepting new connections)
+  // 3. Close HTTP server (stop accepting new connections)
   httpServer.close(async () => {
     logger.info('HTTP server closed');
 
