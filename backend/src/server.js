@@ -26,7 +26,7 @@ app.set('io', io);
 // request context (they can't access req.app.get('io')).
 global.__io = io;
 
-httpServer.listen(env.PORT, async () => {
+httpServer.listen(env.PORT, '0.0.0.0', async () => {
   logger.info(`SmartCRM API listening on port ${env.PORT}`, {
     env: env.NODE_ENV,
     pid: process.pid,

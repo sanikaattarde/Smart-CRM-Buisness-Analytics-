@@ -32,8 +32,15 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     for key, filename in _MODEL_MANIFEST.items():
         path = _MODEL_DIR / filename
         if path.exists():
-            models[key] = joblib.load(path)
-            logger.info("Loaded model '%s' from %s", key, path)
+            try:
+                models[key] = joblib.load(path)
+                logger.info("Loaded model '%s' from %s", key, path)
+            except Exception as exc:
+                logger.warning(
+                    "Failed to load model '%s' from %s — skipping. "
+                    "Re-train and replace the .pkl file. Error: %s",
+                    key, path, exc,
+                )
         else:
             logger.warning("Model file not found: %s — '%s' will be unavailable", path, key)
 

@@ -44,7 +44,7 @@ VALUES
     '00000000-0000-0000-0001-000000000001',
     '00000000-0000-0000-0000-000000000001',
     'superadmin@smartcrm.io',
-    '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewdBPj/RK.s5uMHi',
+    '$2b$12$lJh5OrsWArAd/puFoozlgu97JdXLdPlZOETBDqidPUrbI3kI6C1wO',
     'super_admin',
     true
   ),
@@ -52,7 +52,7 @@ VALUES
     '00000000-0000-0000-0001-000000000002',
     '00000000-0000-0000-0000-000000000001',
     'alice.chen@smartcrm.io',
-    '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewdBPj/RK.s5uMHi',
+    '$2b$12$lJh5OrsWArAd/puFoozlgu97JdXLdPlZOETBDqidPUrbI3kI6C1wO',
     'business_admin',
     true
   ),

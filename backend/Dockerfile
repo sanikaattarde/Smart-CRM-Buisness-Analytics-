@@ -17,6 +17,9 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY src ./src
 COPY package.json ./
 
+# Pre-create the logs dir so Winston (non-root) can write to it
+RUN mkdir -p logs && chown -R appuser:appgroup logs
+
 USER appuser
 
 EXPOSE 3000
