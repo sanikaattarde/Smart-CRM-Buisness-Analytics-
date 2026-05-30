@@ -36,4 +36,4 @@ export default React.memo(function KPICard({ title, value, trend, trendDirection
       </div>
     </div>
   );
-}
+});
