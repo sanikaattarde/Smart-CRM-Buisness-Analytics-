@@ -1,0 +1,10 @@
+{"error":"listen EPERM: operation not permitted 0.0.0.0:3000","level":"\u001b[31merror\u001b[39m","message":"\u001b[31mUncaught exception — shutting down\u001b[39m","stack":"Error: listen EPERM: operation not permitted 0.0.0.0:3000\n    at Server.setupListenHandle [as _listen2] (node:net:1986:21)\n    at listenInCluster (node:net:2065:12)\n    at node:net:2274:7\n    at process.processTicksAndRejections (node:internal/process/task_queues:90:21)","timestamp":"22:49:10"}
+{"error":"","level":"\u001b[31merror\u001b[39m","message":"\u001b[31mRedis: client error\u001b[39m","timestamp":"22:49:10"}
+{"error":"","level":"\u001b[31merror\u001b[39m","message":"\u001b[31mRedis: client error\u001b[39m","timestamp":"22:49:10"}
+{"error":"","level":"\u001b[31merror\u001b[39m","message":"\u001b[31mRedis: client error\u001b[39m","timestamp":"22:49:10"}
+{"error":"","level":"\u001b[31merror\u001b[39m","message":"\u001b[31mRedis: client error\u001b[39m","timestamp":"22:49:10"}
+{"error":"listen EADDRINUSE: address already in use 0.0.0.0:3000","level":"\u001b[31merror\u001b[39m","message":"\u001b[31mUncaught exception — shutting down\u001b[39m","stack":"Error: listen EADDRINUSE: address already in use 0.0.0.0:3000\n    at Server.setupListenHandle [as _listen2] (node:net:2008:16)\n    at listenInCluster (node:net:2065:12)\n    at node:net:2274:7\n    at process.processTicksAndRejections (node:internal/process/task_queues:90:21)","timestamp":"22:49:40"}
+{"error":"Called end on pool more than once","level":"\u001b[31merror\u001b[39m","message":"\u001b[31mError closing PostgreSQL pool\u001b[39m","timestamp":"22:56:13"}
+{"error":"Connection is closed.","level":"\u001b[31merror\u001b[39m","message":"\u001b[31mError closing Redis subscriber\u001b[39m","timestamp":"22:56:17"}
+{"error":"Called end on pool more than once","level":"\u001b[31merror\u001b[39m","message":"\u001b[31mError closing PostgreSQL pool\u001b[39m","timestamp":"22:57:41"}
+{"error":"Connection is closed.","level":"\u001b[31merror\u001b[39m","message":"\u001b[31mError closing Redis subscriber\u001b[39m","timestamp":"22:57:44"}

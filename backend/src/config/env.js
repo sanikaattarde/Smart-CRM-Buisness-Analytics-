@@ -1,5 +1,9 @@
 'use strict';
 
+// Load local .env for non-container local development.
+// In Docker/production, env vars are already injected and this is a no-op.
+require('dotenv').config();
+
 const { cleanEnv, str, port, url, num } = require('envalid');
 
 const env = cleanEnv(process.env, {

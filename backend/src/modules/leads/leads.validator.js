@@ -4,19 +4,20 @@ const { body, param, query } = require('express-validator');
 
 const VALID_SOURCES = ['website', 'referral', 'linkedin', 'cold-email', 'trade-show', 'webinar', 'partner'];
 const VALID_STATUSES = ['open', 'won', 'lost', 'disqualified'];
+const UUID_SHAPE_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const createValidator = [
   body('customer_id')
     .optional({ values: 'null' })
-    .isUUID(4).withMessage('customer_id must be a valid UUID.'),
+    .matches(UUID_SHAPE_REGEX).withMessage('customer_id must be a valid UUID.'),
 
   body('assigned_to')
     .optional({ values: 'null' })
-    .isUUID(4).withMessage('assigned_to must be a valid UUID.'),
+    .matches(UUID_SHAPE_REGEX).withMessage('assigned_to must be a valid UUID.'),
 
   body('pipeline_stage_id')
     .optional({ values: 'null' })
-    .isUUID(4).withMessage('pipeline_stage_id must be a valid UUID.'),
+    .matches(UUID_SHAPE_REGEX).withMessage('pipeline_stage_id must be a valid UUID.'),
 
   body('score')
     .optional()
@@ -34,20 +35,20 @@ const createValidator = [
 ];
 
 const updateValidator = [
-  param('id').isUUID(4).withMessage('Lead ID must be a valid UUID.'),
+  param('id').matches(UUID_SHAPE_REGEX).withMessage('Lead ID must be a valid UUID.'),
   ...createValidator,
 ];
 
 const idParamValidator = [
-  param('id').isUUID(4).withMessage('Lead ID must be a valid UUID.'),
+  param('id').matches(UUID_SHAPE_REGEX).withMessage('Lead ID must be a valid UUID.'),
 ];
 
 const moveStageValidator = [
-  param('id').isUUID(4).withMessage('Lead ID must be a valid UUID.'),
+  param('id').matches(UUID_SHAPE_REGEX).withMessage('Lead ID must be a valid UUID.'),
 
   body('pipeline_stage_id')
     .notEmpty().withMessage('pipeline_stage_id is required.')
-    .isUUID(4).withMessage('pipeline_stage_id must be a valid UUID.'),
+    .matches(UUID_SHAPE_REGEX).withMessage('pipeline_stage_id must be a valid UUID.'),
 ];
 
 const listQueryValidator = [
@@ -61,11 +62,11 @@ const listQueryValidator = [
 
   query('stage_id')
     .optional()
-    .isUUID(4).withMessage('stage_id must be a valid UUID.'),
+    .matches(UUID_SHAPE_REGEX).withMessage('stage_id must be a valid UUID.'),
 
   query('assigned_to')
     .optional()
-    .isUUID(4).withMessage('assigned_to must be a valid UUID.'),
+    .matches(UUID_SHAPE_REGEX).withMessage('assigned_to must be a valid UUID.'),
 
   query('status')
     .optional()

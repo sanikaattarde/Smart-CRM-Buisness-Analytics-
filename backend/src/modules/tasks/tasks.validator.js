@@ -5,6 +5,7 @@ const { body, param, query } = require('express-validator');
 const VALID_PRIORITIES = ['low', 'medium', 'high'];
 const VALID_STATUSES = ['pending', 'in_progress', 'completed'];
 const VALID_ENTITY_TYPES = ['customer', 'lead'];
+const UUID_SHAPE_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const createValidator = [
   body('title')
@@ -14,7 +15,7 @@ const createValidator = [
 
   body('assigned_to')
     .optional({ values: 'null' })
-    .isUUID(4).withMessage('assigned_to must be a valid UUID.'),
+    .matches(UUID_SHAPE_REGEX).withMessage('assigned_to must be a valid UUID.'),
 
   body('related_to_type')
     .optional({ values: 'null' })
@@ -22,7 +23,7 @@ const createValidator = [
 
   body('related_to_id')
     .optional({ values: 'null' })
-    .isUUID(4).withMessage('related_to_id must be a valid UUID.'),
+    .matches(UUID_SHAPE_REGEX).withMessage('related_to_id must be a valid UUID.'),
 
   body('priority')
     .notEmpty().withMessage('Priority is required.')
@@ -38,7 +39,7 @@ const createValidator = [
 ];
 
 const updateValidator = [
-  param('id').isUUID(4).withMessage('Task ID must be a valid UUID.'),
+  param('id').matches(UUID_SHAPE_REGEX).withMessage('Task ID must be a valid UUID.'),
 
   body('title')
     .optional()
@@ -48,7 +49,7 @@ const updateValidator = [
 
   body('assigned_to')
     .optional({ values: 'null' })
-    .isUUID(4).withMessage('assigned_to must be a valid UUID.'),
+    .matches(UUID_SHAPE_REGEX).withMessage('assigned_to must be a valid UUID.'),
 
   body('related_to_type')
     .optional({ values: 'null' })
@@ -56,7 +57,7 @@ const updateValidator = [
 
   body('related_to_id')
     .optional({ values: 'null' })
-    .isUUID(4).withMessage('related_to_id must be a valid UUID.'),
+    .matches(UUID_SHAPE_REGEX).withMessage('related_to_id must be a valid UUID.'),
 
   body('priority')
     .optional()
@@ -72,7 +73,7 @@ const updateValidator = [
 ];
 
 const idParamValidator = [
-  param('id').isUUID(4).withMessage('Task ID must be a valid UUID.'),
+  param('id').matches(UUID_SHAPE_REGEX).withMessage('Task ID must be a valid UUID.'),
 ];
 
 const listQueryValidator = [
@@ -86,7 +87,7 @@ const listQueryValidator = [
 
   query('assigned_to')
     .optional()
-    .isUUID(4).withMessage('assigned_to must be a valid UUID.'),
+    .matches(UUID_SHAPE_REGEX).withMessage('assigned_to must be a valid UUID.'),
 
   query('status')
     .optional()
@@ -102,7 +103,7 @@ const listQueryValidator = [
 
   query('related_to_id')
     .optional()
-    .isUUID(4).withMessage('related_to_id must be a valid UUID.'),
+    .matches(UUID_SHAPE_REGEX).withMessage('related_to_id must be a valid UUID.'),
 ];
 
 module.exports = { createValidator, updateValidator, idParamValidator, listQueryValidator };

@@ -3,6 +3,7 @@
 const { body } = require('express-validator');
 
 const VALID_ROLES = ['super_admin', 'business_admin', 'manager', 'employee'];
+const UUID_SHAPE_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const registerValidator = [
   body('email')
@@ -31,7 +32,7 @@ const registerValidator = [
   body('org_id')
     .trim()
     .notEmpty().withMessage('org_id is required.')
-    .isUUID(4).withMessage('org_id must be a valid UUID v4.'),
+    .matches(UUID_SHAPE_REGEX).withMessage('org_id must be a valid UUID.'),
 ];
 
 const loginValidator = [
@@ -47,7 +48,7 @@ const loginValidator = [
   body('org_id')
     .trim()
     .notEmpty().withMessage('org_id is required.')
-    .isUUID(4).withMessage('org_id must be a valid UUID v4.'),
+    .matches(UUID_SHAPE_REGEX).withMessage('org_id must be a valid UUID.'),
 ];
 
 const refreshValidator = [

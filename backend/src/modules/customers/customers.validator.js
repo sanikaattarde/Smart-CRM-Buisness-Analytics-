@@ -1,6 +1,7 @@
 'use strict';
 
 const { body, param, query } = require('express-validator');
+const UUID_SHAPE_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const createValidator = [
   body('name')
@@ -43,12 +44,12 @@ const createValidator = [
 ];
 
 const updateValidator = [
-  param('id').isUUID(4).withMessage('Customer ID must be a valid UUID.'),
+  param('id').matches(UUID_SHAPE_REGEX).withMessage('Customer ID must be a valid UUID.'),
   ...createValidator.map((v) => v.optional()),
 ];
 
 const idParamValidator = [
-  param('id').isUUID(4).withMessage('Customer ID must be a valid UUID.'),
+  param('id').matches(UUID_SHAPE_REGEX).withMessage('Customer ID must be a valid UUID.'),
 ];
 
 const listQueryValidator = [
