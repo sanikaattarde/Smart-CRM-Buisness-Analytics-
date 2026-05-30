@@ -7,6 +7,8 @@ import LoginPage from '../features/auth/LoginPage';
 import InsightsPage from '../features/insights/InsightsPage';
 import CustomersPage from '../features/customers/CustomersPage';
 import TasksPage from '../features/tasks/TasksPage';
+import ProfilePage from '../features/profile/ProfilePage';
+import SettingsPage from '../features/settings/SettingsPage';
 /* --------------------------------------------------------------------------
    Placeholder (for pages not yet built)
    -------------------------------------------------------------------------- */
@@ -48,7 +50,8 @@ const router = createBrowserRouter([
       { path: 'leads', element: <LeadPipelinePage /> },
       { path: 'tasks', element: <TasksPage /> },
       { path: 'insights', element: <InsightsPage /> },
-      { path: 'settings', element: <PlaceholderPage title="Settings" /> },
+      { path: 'settings', element: <SettingsPage /> },
+      { path: 'profile', element: <ProfilePage /> },
     ],
   },
   {

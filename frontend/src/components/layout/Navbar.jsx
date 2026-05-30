@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { Bell, LogOut, User, ChevronDown } from 'lucide-react';
 import useAuthStore from '../../store/authStore';
 import useUiStore from '../../store/uiStore';
@@ -37,11 +37,13 @@ function resolveTitle(pathname) {
 
 export default function Navbar() {
   const location = useLocation();
+  const navigate = useNavigate();
   const title = resolveTitle(location.pathname);
 
   const user = useAuthStore((s) => s.user);
   const logout = useAuthStore((s) => s.logout);
   const notifications = useUiStore((s) => s.notifications);
+  const addNotification = useUiStore((s) => s.addNotification);
 
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const dropdownRef = useRef(null);
@@ -84,6 +86,11 @@ export default function Navbar() {
         {/* Notification bell */}
         <button
           aria-label="Notifications"
+          onClick={() => {
+            if (notifications.length === 0) {
+              addNotification({ type: 'info', message: 'No new notifications at this time.' });
+            }
+          }}
           className="
             relative flex h-9 w-9 items-center justify-center rounded-md
             text-text-secondary transition-colors hover:bg-base-elevated
@@ -163,6 +170,7 @@ export default function Navbar() {
               <button
                 onClick={() => {
                   setDropdownOpen(false);
+                  navigate('/profile');
                 }}
                 className="
                   flex w-full items-center gap-2.5 rounded-md px-3 py-2
