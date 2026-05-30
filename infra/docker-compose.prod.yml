@@ -1,0 +1,58 @@
+version: "3.9"
+
+services:
+  postgres:
+    restart: unless-stopped
+    ports: []
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+
+  redis:
+    restart: unless-stopped
+    ports: []
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
+
+  backend:
+    image: ghcr.io/yourorg/smartcrm-backend:latest
+    build: !reset null
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+
+  ml-service:
+    image: ghcr.io/yourorg/smartcrm-ml-service:latest
+    build: !reset null
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1G
+
+  frontend:
+    image: ghcr.io/yourorg/smartcrm-frontend:latest
+    build: !reset null
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 128M
+
+  nginx:
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 128M
