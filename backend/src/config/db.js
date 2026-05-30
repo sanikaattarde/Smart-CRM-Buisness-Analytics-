@@ -9,6 +9,9 @@ const pool = new Pool({
   max: 20,
   idleTimeoutMillis: 30_000,
   connectionTimeoutMillis: 5_000,
+  statement_timeout: env.PG_STATEMENT_TIMEOUT_MS,
+  query_timeout: env.PG_QUERY_TIMEOUT_MS,
+  application_name: 'smartcrm-api',
   ssl: env.NODE_ENV === 'production' ? { rejectUnauthorized: true } : false,
 });
 

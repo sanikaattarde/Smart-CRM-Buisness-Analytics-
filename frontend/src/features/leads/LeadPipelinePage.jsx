@@ -64,7 +64,6 @@ export default function LeadPipelinePage() {
   const stagesLoading = useLeadStore((s) => s.stagesLoading);
   const fetchLeads = useLeadStore((s) => s.fetchLeads);
   const fetchStages = useLeadStore((s) => s.fetchStages);
-  const leadsByStageSelector = useLeadStore((s) => s.leadsByStage);
 
   const isLoading = loading || stagesLoading;
 

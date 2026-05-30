@@ -176,3 +176,15 @@ CREATE INDEX idx_analytics_snapshots_org_date ON analytics_snapshots(org_id, sna
 -- and entity id (e.g., all events on lead X); the composite index covers the
 -- full WHERE clause without a recheck filter.
 CREATE INDEX idx_activity_logs_org_entity ON activity_logs(org_id, entity_type, entity_id);
+
+-- Composite index for Kanban/lead funnel lookups by tenant + stage + status.
+CREATE INDEX idx_leads_org_stage_status ON leads(org_id, pipeline_stage_id, status);
+
+-- Composite index for revenue trends scoped by tenant + deal status + close_date.
+CREATE INDEX idx_deals_org_status_close_date ON deals(org_id, status, close_date);
+
+-- Speeds up activity-feed pagination by tenant and newest-first ordering.
+CREATE INDEX idx_activity_logs_org_created_at ON activity_logs(org_id, created_at DESC);
+
+-- Supports tenant-scoped customer timeline/list sorting by creation date.
+CREATE INDEX idx_customers_org_created_at ON customers(org_id, created_at DESC);

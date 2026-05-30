@@ -8,6 +8,7 @@ const logger = require('../shared/logger');
 
 const INSIGHTS_CACHE_KEY = 'ml:insights:latest';
 const INSIGHTS_CACHE_TTL = 4 * 60 * 60; // 4 hours (matches cron interval)
+const INSIGHT_EVENT_CHANNEL = 'events:insight:new';
 
 /**
  * Fetch ML-generated insights, cache them in Redis,
@@ -42,22 +43,32 @@ module.exports = async function generateInsights(job) {
       logger.warn('generateInsights: Redis cache write failed', { error: cacheErr.message });
     }
 
-    // 3. Emit socket events per org
+    // 3. Publish socket events per org
     const io = global.__io;
-    if (io) {
-      const { emitNewInsight } = require('../sockets/crm.events');
+    const { emitNewInsight } = require('../sockets/crm.events');
 
-      const { rows: orgs } = await db.query(
-        `SELECT id FROM organizations WHERE is_active = true`
-      );
+    const { rows: orgs } = await db.query(
+      `SELECT id FROM organizations WHERE is_active = true`
+    );
 
-      for (const org of orgs) {
-        for (const summary of result.insights) {
-          emitNewInsight(io, org.id, {
-            insightId: uuidv4(),
-            type: 'ml_generated',
-            summary,
-          });
+    for (const org of orgs) {
+      for (const summary of result.insights) {
+        const payload = {
+          insightId: uuidv4(),
+          type: 'ml_generated',
+          summary,
+        };
+
+        // If workers run in a separate process, API instances will fan-out
+        // through this Redis pub/sub channel.
+        await redis.publish(
+          INSIGHT_EVENT_CHANNEL,
+          JSON.stringify({ orgId: org.id, payload })
+        );
+
+        // Backward-compatibility for single-process local runtime.
+        if (io) {
+          emitNewInsight(io, org.id, payload);
         }
       }
     }

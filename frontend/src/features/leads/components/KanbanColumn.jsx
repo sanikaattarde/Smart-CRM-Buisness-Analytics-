@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { Droppable } from '@hello-pangea/dnd';
 import { Plus } from 'lucide-react';
 import KanbanCard from './KanbanCard';
@@ -11,13 +12,13 @@ import useUiStore from '../../../store/uiStore';
  *   leads: object[],
  * }} props
  */
-export default function KanbanColumn({ stage, leads }) {
+function KanbanColumn({ stage, leads }) {
   const openModal = useUiStore((s) => s.openModal);
 
   const stageColor = stage.color || 'var(--color-accent)';
 
   return (
-    <div className="flex w-[300px] shrink-0 flex-col rounded-xl bg-base/60">
+    <div className="flex w-[300px] shrink-0 flex-col rounded-xl bg-base/60" style={{ contentVisibility: 'auto' }}>
       {/* Column header */}
       <div className="flex items-center justify-between px-3 pt-3 pb-2">
         <div className="flex items-center gap-2">
@@ -85,3 +86,5 @@ export default function KanbanColumn({ stage, leads }) {
     </div>
   );
 }
+
+export default memo(KanbanColumn);

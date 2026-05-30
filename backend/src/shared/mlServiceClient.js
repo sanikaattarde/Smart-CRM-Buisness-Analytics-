@@ -12,8 +12,13 @@ const ML_SERVICE_URL = process.env.ML_SERVICE_URL || 'http://ml-service:8001';
 
 const RETRY_CONFIG = {
   maxAttempts: 3,
-  baseDelayMs: 1000,    // 1s → 2s → 4s
+  baseDelayMs: 1000,
   backoffFactor: 2,
+};
+
+const BREAKER_CONFIG = {
+  failureThreshold: 5,
+  openStateMs: 30_000,
 };
 
 const CACHE_TTL_SECONDS = 6 * 60 * 60; // 6 hours
@@ -29,17 +34,101 @@ const client = axios.create({
 });
 
 // ---------------------------------------------------------------------------
-// Retry with exponential backoff
+// Circuit breaker state
 // ---------------------------------------------------------------------------
+
+const breaker = {
+  state: 'CLOSED', // CLOSED | OPEN | HALF_OPEN
+  consecutiveFailures: 0,
+  openedAt: 0,
+  halfOpenProbeInFlight: false,
+};
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-/**
- * Execute an async fn with exponential-backoff retries.
- * @param {Function} fn   — async function to execute
- * @returns {Promise<*>}  — resolved value of fn
- * @throws after all retries exhausted
- */
+const isRetryableError = (err) => (
+  !err.response ||
+  err.response.status >= 500 ||
+  err.response.status === 429 ||
+  err.code === 'ECONNABORTED' ||
+  err.code === 'ECONNRESET' ||
+  err.code === 'ENOTFOUND'
+);
+
+const openBreaker = (reason) => {
+  breaker.state = 'OPEN';
+  breaker.openedAt = Date.now();
+  breaker.consecutiveFailures = 0;
+  breaker.halfOpenProbeInFlight = false;
+
+  logger.error('mlServiceClient: circuit breaker OPEN', { reason });
+};
+
+const closeBreaker = () => {
+  if (breaker.state !== 'CLOSED') {
+    logger.info('mlServiceClient: circuit breaker CLOSED');
+  }
+  breaker.state = 'CLOSED';
+  breaker.consecutiveFailures = 0;
+  breaker.openedAt = 0;
+  breaker.halfOpenProbeInFlight = false;
+};
+
+const maybeMoveToHalfOpen = () => {
+  if (breaker.state !== 'OPEN') return;
+
+  if (Date.now() - breaker.openedAt >= BREAKER_CONFIG.openStateMs) {
+    breaker.state = 'HALF_OPEN';
+    breaker.halfOpenProbeInFlight = false;
+    logger.warn('mlServiceClient: circuit breaker HALF_OPEN');
+  }
+};
+
+const buildBreakerOpenError = () => {
+  const err = new Error('ML circuit breaker is open');
+  err.code = 'ML_BREAKER_OPEN';
+  return err;
+};
+
+const acquireBreakerPermit = () => {
+  maybeMoveToHalfOpen();
+
+  if (breaker.state === 'OPEN') {
+    throw buildBreakerOpenError();
+  }
+
+  if (breaker.state === 'HALF_OPEN') {
+    if (breaker.halfOpenProbeInFlight) {
+      throw buildBreakerOpenError();
+    }
+    breaker.halfOpenProbeInFlight = true;
+  }
+};
+
+const onSuccessfulCall = () => {
+  closeBreaker();
+};
+
+const onFailedCall = (err) => {
+  const retryable = isRetryableError(err);
+
+  if (breaker.state === 'HALF_OPEN') {
+    openBreaker(`half-open probe failed: ${err.message}`);
+    return;
+  }
+
+  if (!retryable) return;
+
+  breaker.consecutiveFailures += 1;
+  if (breaker.consecutiveFailures >= BREAKER_CONFIG.failureThreshold) {
+    openBreaker(`failure threshold reached (${BREAKER_CONFIG.failureThreshold})`);
+  }
+};
+
+// ---------------------------------------------------------------------------
+// Retry with exponential backoff
+// ---------------------------------------------------------------------------
+
 async function withRetry(fn) {
   let lastError;
 
@@ -48,22 +137,17 @@ async function withRetry(fn) {
       return await fn();
     } catch (err) {
       lastError = err;
+      const retryable = isRetryableError(err);
 
-      const isRetryable =
-        !err.response ||                         // network / timeout
-        err.response.status >= 500 ||            // server error
-        err.code === 'ECONNABORTED';             // timeout
-
-      if (!isRetryable || attempt === RETRY_CONFIG.maxAttempts) {
+      if (!retryable || attempt === RETRY_CONFIG.maxAttempts) {
         break;
       }
 
-      const delay =
-        RETRY_CONFIG.baseDelayMs * RETRY_CONFIG.backoffFactor ** (attempt - 1);
+      const delay = RETRY_CONFIG.baseDelayMs * RETRY_CONFIG.backoffFactor ** (attempt - 1);
 
       logger.warn(
         `mlServiceClient: attempt ${attempt}/${RETRY_CONFIG.maxAttempts} failed, retrying in ${delay}ms`,
-        { endpoint: err.config?.url, code: err.code }
+        { endpoint: err.config?.url, code: err.code, status: err.response?.status }
       );
 
       await sleep(delay);
@@ -73,49 +157,46 @@ async function withRetry(fn) {
   throw lastError;
 }
 
+async function withBreaker(fn) {
+  acquireBreakerPermit();
+
+  try {
+    const result = await withRetry(fn);
+    onSuccessfulCall();
+    return result;
+  } catch (err) {
+    onFailedCall(err);
+    throw err;
+  } finally {
+    if (breaker.state === 'HALF_OPEN') {
+      // Keep single-probe semantics while half-open.
+      breaker.halfOpenProbeInFlight = false;
+    }
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Redis cache helpers
 // ---------------------------------------------------------------------------
 
-/**
- * Build a namespaced cache key.
- * @param {string} endpoint  — e.g. "churn", "revenue", "lead-score"
- * @param {string} entityId  — UUID or other identifier
- */
 function cacheKey(endpoint, entityId) {
   return `ml:${endpoint}:${entityId}`;
 }
 
-/**
- * Write a prediction result to Redis with TTL.
- */
 async function cacheSet(key, data) {
   try {
     await redis.set(key, JSON.stringify(data), 'EX', CACHE_TTL_SECONDS);
   } catch (err) {
-    // Non-fatal — log and move on. Never let a Redis failure break the flow.
-    logger.warn('mlServiceClient: Redis cache write failed', {
-      key,
-      error: err.message,
-    });
+    logger.warn('mlServiceClient: Redis cache write failed', { key, error: err.message });
   }
 }
 
-/**
- * Read a cached prediction from Redis.
- * @returns {object|null}
- */
 async function cacheGet(key) {
   try {
     const raw = await redis.get(key);
-    if (raw) {
-      return JSON.parse(raw);
-    }
+    if (raw) return JSON.parse(raw);
   } catch (err) {
-    logger.warn('mlServiceClient: Redis cache read failed', {
-      key,
-      error: err.message,
-    });
+    logger.warn('mlServiceClient: Redis cache read failed', { key, error: err.message });
   }
   return null;
 }
@@ -131,118 +212,83 @@ const FALLBACKS = {
 };
 
 // ---------------------------------------------------------------------------
-// Core request wrapper  (retry → cache-on-success → fallback-on-failure)
+// Core request wrapper  (breaker/retry → cache-on-success → fallback)
 // ---------------------------------------------------------------------------
 
-/**
- * Make a prediction request with full resilience:
- *   1. Try the live ML service (with retries).
- *   2. On success → cache and return.
- *   3. On failure → serve from Redis cache, or return a null-object fallback.
- *
- * @param {string}  endpoint  — route segment, e.g. "churn"
- * @param {string}  entityId  — cache entity identifier
- * @param {object}  payload   — POST body
- * @returns {Promise<object>}
- */
 async function predict(endpoint, entityId, payload) {
   const key = cacheKey(endpoint, entityId);
 
   try {
-    const { data } = await withRetry(() =>
+    const { data } = await withBreaker(() =>
       client.post(`/predict/${endpoint}`, payload)
     );
 
-    // Cache successful live result
     await cacheSet(key, data);
-
     return { ...data, _cached: false, _fallback: false };
   } catch (err) {
-    logger.error('mlServiceClient: ML service unreachable after retries', {
-      endpoint,
-      entityId,
-      error: err.message,
-    });
+    if (err.code === 'ML_BREAKER_OPEN') {
+      logger.warn('mlServiceClient: breaker open, skipping live ML call', { endpoint, entityId });
+    } else {
+      logger.error('mlServiceClient: ML service call failed after retries', {
+        endpoint,
+        entityId,
+        error: err.message,
+        status: err.response?.status,
+      });
+    }
 
-    // Attempt Redis cache fallback
     const cached = await cacheGet(key);
     if (cached) {
       logger.info('mlServiceClient: serving cached prediction', { key });
       return { ...cached, _cached: true, _fallback: false };
     }
 
-    // Last resort: null-object fallback
-    logger.warn('mlServiceClient: no cache available, returning fallback', {
-      endpoint,
-      entityId,
-    });
+    logger.warn('mlServiceClient: no cache available, returning fallback', { endpoint, entityId });
     return { ...(FALLBACKS[endpoint] || FALLBACKS.churn) };
   }
 }
 
 // ---------------------------------------------------------------------------
-// Public API  — typed wrappers per endpoint
+// Public API wrappers
 // ---------------------------------------------------------------------------
 
-/**
- * Predict churn risk for a customer.
- * @param {string} customerId  — UUID
- * @param {object} features    — { days_since_last_interaction, purchase_frequency, ... }
- * @returns {Promise<{ churn_risk: number|null, confidence: number|null, _cached, _fallback }>}
- */
 async function predictChurn(customerId, features) {
   return predict('churn', customerId, {
+    schema_version: '1.0',
     customer_id: customerId,
     features,
   });
 }
 
-/**
- * Forecast revenue for a business entity.
- * @param {string} entityId  — UUID or business-unit identifier
- * @param {object} features  — { avg_monthly_revenue, pipeline_value, headcount }
- * @returns {Promise<{ forecast: number|null, range: [number|null, number|null], _cached, _fallback }>}
- */
 async function predictRevenue(entityId, features) {
-  return predict('revenue', entityId, { features });
+  return predict('revenue', entityId, {
+    schema_version: '1.0',
+    features,
+  });
 }
 
-/**
- * Score a lead.
- * @param {string} leadId    — UUID
- * @param {object} features  — { source, days_in_pipeline, email_responses, meetings_held, deal_value }
- * @returns {Promise<{ score: number|null, tier: string, _cached, _fallback }>}
- */
 async function predictLeadScore(leadId, features) {
   return predict('lead-score', leadId, {
+    schema_version: '1.0',
     lead_id: leadId,
     features,
   });
 }
 
-/**
- * Fetch generated insights from the ML service.
- * No caching — insights are computed from current data each time.
- * @returns {Promise<{ insights: string[] }>}
- */
 async function getInsights() {
   try {
-    const { data } = await withRetry(() =>
-      client.get('/insights/generate')
-    );
+    const { data } = await withBreaker(() => client.get('/insights/generate'));
     return data;
   } catch (err) {
     logger.error('mlServiceClient: failed to fetch insights', {
       error: err.message,
+      status: err.response?.status,
+      breakerState: breaker.state,
     });
     return { insights: [], _fallback: true };
   }
 }
 
-/**
- * Health check — ping the ML service.
- * @returns {Promise<{ status: string, models_loaded?: string[], models_missing?: string[] }>}
- */
 async function healthCheck() {
   try {
     const { data } = await client.get('/health', { timeout: 3_000 });

@@ -9,6 +9,11 @@ const useAuthStore = create((set, get) => ({
   refreshToken: null,
   isAuthenticated: false,
 
+  clearSession: () => {
+    localStorage.removeItem(REFRESH_TOKEN_KEY);
+    set({ user: null, accessToken: null, refreshToken: null, isAuthenticated: false });
+  },
+
   /**
    * Hydrate auth state from persisted refresh token on app boot.
    * Attempts a silent refresh; clears stale tokens on failure.
@@ -20,8 +25,7 @@ const useAuthStore = create((set, get) => ({
     try {
       await get().refreshTokenAction(storedRefresh);
     } catch {
-      localStorage.removeItem(REFRESH_TOKEN_KEY);
-      set({ user: null, accessToken: null, refreshToken: null, isAuthenticated: false });
+      get().clearSession();
     }
   },
 
@@ -52,14 +56,22 @@ const useAuthStore = create((set, get) => ({
   },
 
   logout: async () => {
+    const baseURL = import.meta.env.VITE_API_BASE_URL || '/api/v1';
+    const { accessToken } = get();
+
     try {
-      await api.post('/auth/logout');
+      await fetch(`${baseURL}/auth/logout`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+        },
+      });
     } catch {
       // Best-effort server logout; always clear local state.
     }
 
-    localStorage.removeItem(REFRESH_TOKEN_KEY);
-    set({ user: null, accessToken: null, refreshToken: null, isAuthenticated: false });
+    get().clearSession();
   },
 
   /**
@@ -70,20 +82,39 @@ const useAuthStore = create((set, get) => ({
    */
   refreshTokenAction: async (token) => {
     const refreshToken = token || get().refreshToken || localStorage.getItem(REFRESH_TOKEN_KEY);
-    if (!refreshToken) throw new Error('No refresh token available');
+    if (!refreshToken) {
+      get().clearSession();
+      throw new Error('No refresh token available');
+    }
 
     // Use a raw axios instance to avoid interceptor recursion.
     const baseURL = import.meta.env.VITE_API_BASE_URL || '/api/v1';
-    const response = await fetch(`${baseURL}/auth/refresh`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ refreshToken }),
-    });
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 8000);
+    let response;
+
+    try {
+      response = await fetch(`${baseURL}/auth/refresh`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refreshToken }),
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(timeoutId);
+    }
 
     if (!response.ok) {
-      localStorage.removeItem(REFRESH_TOKEN_KEY);
-      set({ user: null, accessToken: null, refreshToken: null, isAuthenticated: false });
-      throw new Error('Refresh failed');
+      let serverMessage = 'Refresh failed';
+      try {
+        const body = await response.json();
+        serverMessage = body?.error?.message || serverMessage;
+      } catch {
+        // Ignore parse failure and keep default message.
+      }
+
+      get().clearSession();
+      throw new Error(serverMessage);
     }
 
     const result = await response.json();

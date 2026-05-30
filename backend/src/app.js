@@ -19,6 +19,7 @@ const tasksRouter = require('./modules/tasks/tasks.routes');
 const analyticsRouter = require('./modules/analytics/analytics.routes');
 
 const app = express();
+app.set('trust proxy', env.TRUST_PROXY_HOPS);
 
 // ---------------------------------------------------------------------------
 // 1. Security headers
@@ -62,7 +63,7 @@ app.use(
 // ---------------------------------------------------------------------------
 const apiLimiter = rateLimit({
   windowMs: 60 * 1000, // 1 minute
-  max: 100,
+  max: env.API_RATE_LIMIT_PER_MIN,
   standardHeaders: true,
   legacyHeaders: false,
   store: new RedisStore({
@@ -78,8 +79,8 @@ const apiLimiter = rateLimit({
 // ---------------------------------------------------------------------------
 // 6. API routes (v1)
 // ---------------------------------------------------------------------------
-app.use('/api/v1', apiLimiter);
 app.use('/api/v1/auth', authRouter);
+app.use('/api/v1', apiLimiter);
 app.use('/api/v1/customers', customersRouter);
 app.use('/api/v1/leads', leadsRouter);
 app.use('/api/v1/tasks', tasksRouter);

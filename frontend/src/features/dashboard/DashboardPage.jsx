@@ -41,7 +41,7 @@ const TARGET_DATA = [
   { month: 'Jun', target: 75000, actual: 91000 }
 ];
 
-function CustomTooltip({ active, payload, label }) {
+const CustomTooltip = React.memo(function CustomTooltip({ active, payload, label }) {
   if (active && payload && payload.length) {
     return (
       <div className="rounded-md border border-border bg-base-elevated p-3 shadow-lg">
@@ -59,7 +59,7 @@ function CustomTooltip({ active, payload, label }) {
     );
   }
   return null;
-}
+});
 
 function DashboardEmptyState() {
   return (
@@ -166,6 +166,7 @@ export default function DashboardPage() {
                   stroke="#3b82f6" 
                   strokeWidth={2}
                   fill="url(#colorValue)" 
+                  isAnimationActive={false}
                   activeDot={{ r: 4 }} 
                 />
                 <Area 
@@ -175,6 +176,7 @@ export default function DashboardPage() {
                   strokeWidth={2}
                   strokeDasharray="5 5" 
                   fill="none" 
+                  isAnimationActive={false}
                   activeDot={{ r: 4 }} 
                 />
               </AreaChart>
@@ -183,7 +185,7 @@ export default function DashboardPage() {
             <KPICard title="Active Leads" value="92" trend="+4" trendDirection="up">
               <BarChart data={LEADS_DATA} margin={{ top: 5, right: 0, left: 0, bottom: 0 }}>
                 <Tooltip content={<CustomTooltip />} cursor={{ fill: '#1e293b' }} />
-                <Bar dataKey="count" fill="#6366f1" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="count" fill="#6366f1" radius={[4, 4, 0, 0]} isAnimationActive={false} />
               </BarChart>
             </KPICard>
 
@@ -200,6 +202,7 @@ export default function DashboardPage() {
                   clockWise
                   dataKey="value"
                   cornerRadius={4}
+                  isAnimationActive={false}
                   fill={customerHealth >= 80 ? '#22c55e' : customerHealth >= 50 ? '#eab308' : '#ef4444'}
                 />
               </RadialBarChart>
@@ -220,6 +223,7 @@ export default function DashboardPage() {
                   stroke="#ef4444" 
                   strokeWidth={2}
                   fill="url(#colorWin)" 
+                  isAnimationActive={false}
                 />
               </AreaChart>
             </KPICard>
@@ -243,7 +247,7 @@ export default function DashboardPage() {
                     <Tooltip content={<CustomTooltip />} cursor={{ fill: '#1e293b' }} />
                     <Legend wrapperStyle={{ paddingTop: '20px' }} iconType="circle" />
                     <Bar name="Target Revenue" dataKey="target" fill="#334155" radius={[4, 4, 0, 0]} maxBarSize={40} />
-                    <Line name="Actual Revenue" type="monotone" dataKey="actual" stroke="#3b82f6" strokeWidth={3} dot={{ r: 4, fill: '#3b82f6', strokeWidth: 0 }} activeDot={{ r: 6, strokeWidth: 0 }} />
+                    <Line name="Actual Revenue" type="monotone" dataKey="actual" stroke="#3b82f6" strokeWidth={3} dot={{ r: 4, fill: '#3b82f6', strokeWidth: 0 }} activeDot={{ r: 6, strokeWidth: 0 }} isAnimationActive={false} />
                   </ComposedChart>
                 </ResponsiveContainer>
               </div>

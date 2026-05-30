@@ -9,8 +9,6 @@ const ML_SERVICE_URL = process.env.ML_SERVICE_URL || 'http://ml-service:8001';
  * Trigger the ML service to retrain all models.
  *
  * Calls POST /retrain on the Python microservice.
- * This is a placeholder endpoint — the ML service will implement the
- * actual retraining orchestration in a future phase.
  *
  * @param {import('bullmq').Job} job
  * @returns {Promise<{ success: boolean, processed: number, errors: string[] }>}
@@ -29,16 +27,12 @@ module.exports = async function retrainModels(job) {
     logger.info('retrainModels: ML service responded', { data });
     processed = 1;
   } catch (err) {
-    // 404 is expected until the /retrain endpoint is built in the ML service
-    if (err.response?.status === 404) {
-      logger.warn('retrainModels: /retrain endpoint not implemented yet (404)');
-      processed = 0;
-    } else {
-      const msg = `ML service error: ${err.message}`;
-      errors.push(msg);
-      logger.error('retrainModels: failed', { error: err.message, code: err.code });
-      throw err;   // let BullMQ retry
-    }
+    const status = err.response?.status;
+    const detail = err.response?.data?.detail || err.message;
+    const msg = `ML service retrain request failed (${status || 'network'}): ${detail}`;
+    errors.push(msg);
+    logger.error('retrainModels: failed', { status, error: detail, code: err.code });
+    throw err; // let BullMQ retry/fail visibly
   }
 
   const result = { success: errors.length === 0, processed, errors };

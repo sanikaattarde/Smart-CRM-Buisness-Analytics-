@@ -28,34 +28,21 @@ api.interceptors.request.use(
 );
 
 // ---------------------------------------------------------------------------
-// Response interceptor — 401 handling with queued retry
+// Response interceptor — 401 handling with single-flight refresh
 // ---------------------------------------------------------------------------
 
-/** @type {boolean} Whether a token refresh is already in flight. */
-let isRefreshing = false;
+let refreshPromise = null;
 
-/**
- * Queue of { resolve, reject } callbacks for requests that arrived
- * while a refresh was in progress. Once the refresh settles, every
- * queued request is replayed with the new token (or rejected).
- * @type {Array<{ resolve: Function, reject: Function }>}
- */
-let failedQueue = [];
+const AUTH_ENDPOINTS = ['/auth/login', '/auth/register', '/auth/refresh', '/auth/logout'];
 
-/**
- * Drain the queue: resolve or reject every waiting request.
- * @param {string|null} newToken
- * @param {Error|null} error
- */
-const processQueue = (newToken, error) => {
-  for (const { resolve, reject } of failedQueue) {
-    if (error) {
-      reject(error);
-    } else {
-      resolve(newToken);
-    }
+const isAuthEndpoint = (url = '') =>
+  AUTH_ENDPOINTS.some((path) => url.includes(path));
+
+const redirectToLogin = () => {
+  if (typeof window === 'undefined') return;
+  if (window.location.pathname !== '/login') {
+    window.location.href = '/login';
   }
-  failedQueue = [];
 };
 
 api.interceptors.response.use(
@@ -63,50 +50,41 @@ api.interceptors.response.use(
   async (error) => {
     const originalRequest = error.config;
 
+    if (!originalRequest) {
+      return Promise.reject(normalizeError(error));
+    }
+
     // Guard: only handle 401s that haven't already been retried.
     if (error.response?.status !== 401 || originalRequest._retry) {
       return Promise.reject(normalizeError(error));
     }
 
-    // Do not intercept auth refresh requests themselves.
-    if (originalRequest.url?.includes('/auth/refresh')) {
+    // Do not intercept auth endpoints themselves.
+    if (isAuthEndpoint(originalRequest.url)) {
       return Promise.reject(normalizeError(error));
     }
 
     originalRequest._retry = true;
 
-    // If a refresh is already in flight, queue this request.
-    if (isRefreshing) {
-      return new Promise((resolve, reject) => {
-        failedQueue.push({ resolve, reject });
-      }).then((newToken) => {
-        originalRequest.headers.Authorization = `Bearer ${newToken}`;
-        return api(originalRequest);
-      });
+    if (!refreshPromise) {
+      refreshPromise = useAuthStore
+        .getState()
+        .refreshTokenAction()
+        .finally(() => {
+          refreshPromise = null;
+        });
     }
 
-    isRefreshing = true;
-
     try {
-      const newToken = await useAuthStore.getState().refreshTokenAction();
-
-      processQueue(newToken, null);
-
+      const newToken = await refreshPromise;
+      originalRequest.headers = originalRequest.headers || {};
       originalRequest.headers.Authorization = `Bearer ${newToken}`;
       return api(originalRequest);
     } catch (refreshError) {
-      processQueue(null, refreshError);
-
       // Refresh failed — force logout and redirect.
-      useAuthStore.getState().logout();
-
-      if (typeof window !== 'undefined') {
-        window.location.href = '/login';
-      }
-
+      useAuthStore.getState().clearSession();
+      redirectToLogin();
       return Promise.reject(normalizeError(refreshError));
-    } finally {
-      isRefreshing = false;
     }
   }
 );

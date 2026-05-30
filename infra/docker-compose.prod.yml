@@ -23,11 +23,24 @@ services:
     image: ghcr.io/yourorg/smartcrm-backend:latest
     build: !reset null
     restart: unless-stopped
+    command: ["node", "src/server.js"]
     deploy:
       resources:
         limits:
           cpus: "1.0"
           memory: 512M
+
+  worker:
+    image: ghcr.io/yourorg/smartcrm-backend:latest
+    build: !reset null
+    restart: unless-stopped
+    command: ["node", "--max-old-space-size=512", "src/worker-server.js"]
+    deploy:
+      replicas: 2
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 768M
 
   ml-service:
     image: ghcr.io/yourorg/smartcrm-ml-service:latest

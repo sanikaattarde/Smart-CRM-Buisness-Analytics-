@@ -108,12 +108,30 @@ jobs:
           python-version: "3.11"
           cache: pip
       - run: pip install -r requirements.txt pytest
-      - run: pytest --tb=short -q || true
+      - run: pytest --tb=short -q
+
+  security-scan:
+    name: Security — Trivy FS Scan
+    needs: [test-frontend, test-backend, test-ml]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          vuln-type: os,library
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: "1"
 
   # ── Build Docker Images ─────────────────────────────────────
   build:
     name: Build — Docker Images
-    needs: [test-frontend, test-backend, test-ml]
+    needs: [test-frontend, test-backend, test-ml, security-scan]
     runs-on: ubuntu-latest
     permissions:
       contents: read

@@ -51,6 +51,23 @@ services:
       redis:
         condition: service_healthy
 
+  worker:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    command: ["node", "src/worker-server.js"]
+    env_file:
+      - ../backend/.env
+    environment:
+      DATABASE_URL: postgres://smartcrm:smartcrm@postgres:5432/smartcrm
+      REDIS_URL: redis://redis:6379
+      ML_SERVICE_URL: http://ml-service:8001
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
   ml-service:
     build:
       context: ../ml-service

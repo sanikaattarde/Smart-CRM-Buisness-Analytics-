@@ -14,66 +14,164 @@ const ACCESS_TOKEN_TTL = '15m';
 const REFRESH_TOKEN_TTL = '7d';
 const REFRESH_TOKEN_TTL_SECONDS = 7 * 24 * 60 * 60; // 604800s
 
+// Atomic compare-and-set for refresh rotation.
+// Return codes:
+//   1  => rotation successful
+//   0  => no token exists (revoked/missing)
+//  -1  => token mismatch (stale/replayed token)
+const REFRESH_ROTATION_LUA = `
+local current = redis.call('GET', KEYS[1])
+if not current then
+  return 0
+end
+
+if current ~= ARGV[1] then
+  return -1
+end
+
+redis.call('SET', KEYS[1], ARGV[2], 'EX', tonumber(ARGV[3]))
+return 1
+`;
+
+const LEGACY_REFRESH_ROTATION_LUA = `
+local current = redis.call('GET', KEYS[1])
+if not current then
+  return 0
+end
+
+if current ~= ARGV[1] then
+  return -1
+end
+
+redis.call('DEL', KEYS[1])
+redis.call('SET', KEYS[2], ARGV[2], 'EX', tonumber(ARGV[3]))
+return 1
+`;
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-/**
- * SHA-256 hash a token string before persisting to Redis.
- * Prevents raw token exposure even if the Redis store is compromised.
- */
 const hashToken = (token) =>
   crypto.createHash('sha256').update(token).digest('hex');
 
-/** Redis key namespace for refresh tokens. */
-const refreshKey = (userId) => `refresh:${userId}`;
+const newSessionId = () => crypto.randomUUID();
+const newJti = () => crypto.randomUUID();
+
+const refreshKey = (userId, sessionId) => `refresh:${userId}:${sessionId}`;
+const legacyRefreshKey = (userId) => `refresh:${userId}`;
 
 const signAccessToken = (payload) =>
-  jwt.sign(payload, env.JWT_SECRET, { expiresIn: ACCESS_TOKEN_TTL, algorithm: 'HS256' });
+  jwt.sign(payload, env.JWT_SECRET, {
+    expiresIn: ACCESS_TOKEN_TTL,
+    algorithm: 'HS256',
+    jwtid: newJti(),
+  });
 
 const signRefreshToken = (payload) =>
-  jwt.sign(payload, env.JWT_REFRESH_SECRET, { expiresIn: REFRESH_TOKEN_TTL, algorithm: 'HS256' });
+  jwt.sign(payload, env.JWT_REFRESH_SECRET, {
+    expiresIn: REFRESH_TOKEN_TTL,
+    algorithm: 'HS256',
+    jwtid: newJti(),
+  });
 
-/**
- * Persist the SHA-256 hash of a refresh token in Redis.
- * TTL is set to exactly 7 days to match the token's expiry.
- */
-const storeRefreshToken = async (userId, rawToken) => {
-  const hashed = hashToken(rawToken);
-  await redis.set(refreshKey(userId), hashed, 'EX', REFRESH_TOKEN_TTL_SECONDS);
-};
-
-/**
- * Issue a coordinated access + refresh token pair and persist the refresh hash.
- *
- * @param {{ id: string, org_id: string, email: string, role: string }} user
- * @returns {{ accessToken: string, refreshToken: string }}
- */
-const issueTokenPair = async (user) => {
+const buildTokenPair = (user, sessionId) => {
   const payload = {
     sub: user.id,
     org_id: user.org_id,
     email: user.email,
     role: user.role,
+    sid: sessionId,
   };
 
-  const accessToken = signAccessToken(payload);
-  const refreshToken = signRefreshToken(payload);
+  return {
+    accessToken: signAccessToken(payload),
+    refreshToken: signRefreshToken(payload),
+  };
+};
 
-  await storeRefreshToken(user.id, refreshToken);
+const storeRefreshToken = async (userId, sessionId, rawToken) => {
+  await redis.set(
+    refreshKey(userId, sessionId),
+    hashToken(rawToken),
+    'EX',
+    REFRESH_TOKEN_TTL_SECONDS
+  );
+};
 
-  return { accessToken, refreshToken };
+const issueTokenPair = async (user, sessionId = newSessionId()) => {
+  const tokens = buildTokenPair(user, sessionId);
+  await storeRefreshToken(user.id, sessionId, tokens.refreshToken);
+  return tokens;
+};
+
+const rotateRefreshTokenAtomic = async ({
+  userId,
+  sessionId,
+  oldRawRefreshToken,
+  newRawRefreshToken,
+}) => {
+  const result = await redis.eval(
+    REFRESH_ROTATION_LUA,
+    1,
+    refreshKey(userId, sessionId),
+    hashToken(oldRawRefreshToken),
+    hashToken(newRawRefreshToken),
+    String(REFRESH_TOKEN_TTL_SECONDS)
+  );
+  return Number(result);
+};
+
+const rotateLegacyRefreshTokenAtomic = async ({
+  userId,
+  oldRawRefreshToken,
+  newSessionIdValue,
+  newRawRefreshToken,
+}) => {
+  const result = await redis.eval(
+    LEGACY_REFRESH_ROTATION_LUA,
+    2,
+    legacyRefreshKey(userId),
+    refreshKey(userId, newSessionIdValue),
+    hashToken(oldRawRefreshToken),
+    hashToken(newRawRefreshToken),
+    String(REFRESH_TOKEN_TTL_SECONDS)
+  );
+  return Number(result);
+};
+
+const deleteSessionToken = async (userId, sessionId) => {
+  if (!sessionId) return 0;
+  return redis.del(refreshKey(userId, sessionId));
+};
+
+const deleteAllUserSessionTokens = async (userId) => {
+  let cursor = '0';
+  let deleted = 0;
+
+  do {
+    const [nextCursor, keys] = await redis.scan(
+      cursor,
+      'MATCH',
+      `refresh:${userId}:*`,
+      'COUNT',
+      100
+    );
+
+    cursor = nextCursor;
+    if (keys.length) {
+      deleted += await redis.del(...keys);
+    }
+  } while (cursor !== '0');
+
+  return deleted;
 };
 
 // ---------------------------------------------------------------------------
 // Public service methods
 // ---------------------------------------------------------------------------
 
-/**
- * Register a new user within an existing organisation.
- */
 const register = async ({ name, email, password, role = 'employee', org_id }) => {
-  // Verify the organisation exists and is active.
   const { rows: orgRows } = await db.query(
     'SELECT id FROM organizations WHERE id = $1 AND is_active = true',
     [org_id]
@@ -82,7 +180,6 @@ const register = async ({ name, email, password, role = 'employee', org_id }) =>
     throw createError('Organisation not found or inactive.', 'ORG_NOT_FOUND', 404);
   }
 
-  // Guard against duplicate email within the same organisation.
   const { rows: existing } = await db.query(
     'SELECT id FROM users WHERE org_id = $1 AND email = $2',
     [org_id, email]
@@ -106,9 +203,6 @@ const register = async ({ name, email, password, role = 'employee', org_id }) =>
   return { user, ...tokens };
 };
 
-/**
- * Authenticate a user by email + password and issue a token pair.
- */
 const login = async ({ email, password, org_id }) => {
   const { rows } = await db.query(
     `SELECT id, org_id, email, password_hash, role, is_active
@@ -117,10 +211,8 @@ const login = async ({ email, password, org_id }) => {
     [email, org_id]
   );
 
-  // Use a constant-time compare regardless of whether the user exists to
-  // prevent timing-based user enumeration.
   const user = rows[0];
-  const dummyHash = '$2b$12$invalidhashusedtopreventsidetimedattacksonuserenum..';
+  const dummyHash = '$2b$12$Q8yPJwfgpEy0S0Bpq8GJ3Ol3QepAKjL8Gcm7IxesANRo2f1wV0f9K';
   const passwordMatch = await bcrypt.compare(password, user ? user.password_hash : dummyHash);
 
   if (!user || !passwordMatch) {
@@ -144,10 +236,6 @@ const login = async ({ email, password, org_id }) => {
   };
 };
 
-/**
- * Validate an incoming refresh token, rotate the pair, and issue fresh tokens.
- * The old token is invalidated atomically before the new one is stored.
- */
 const refresh = async (rawRefreshToken) => {
   let decoded;
   try {
@@ -157,19 +245,12 @@ const refresh = async (rawRefreshToken) => {
   }
 
   const userId = decoded.sub;
-  const storedHash = await redis.get(refreshKey(userId));
+  const sessionId = decoded.sid || null;
 
-  if (!storedHash) {
-    throw createError('Refresh token has been revoked or does not exist.', 'REFRESH_TOKEN_REVOKED', 401);
+  if (!userId) {
+    throw createError('Refresh token payload is invalid.', 'INVALID_REFRESH_TOKEN', 401);
   }
 
-  if (storedHash !== hashToken(rawRefreshToken)) {
-    // Token reuse detected — invalidate all sessions for this user.
-    await redis.del(refreshKey(userId));
-    throw createError('Refresh token reuse detected. All sessions have been invalidated.', 'TOKEN_REUSE', 401);
-  }
-
-  // Fetch fresh user state in case role or active status changed since last login.
   const { rows } = await db.query(
     `SELECT id, org_id, email, role, is_active
      FROM users
@@ -179,14 +260,42 @@ const refresh = async (rawRefreshToken) => {
 
   const user = rows[0];
   if (!user || !user.is_active) {
-    await redis.del(refreshKey(userId));
+    if (sessionId) {
+      await deleteSessionToken(userId, sessionId);
+    } else {
+      await redis.del(legacyRefreshKey(userId));
+    }
     throw createError('User not found or account has been deactivated.', 'ACCOUNT_DISABLED', 403);
   }
 
-  // Delete old token before issuing new pair to prevent parallel reuse.
-  await redis.del(refreshKey(userId));
+  let tokens;
+  let rotateResult;
 
-  const tokens = await issueTokenPair(user);
+  if (sessionId) {
+    tokens = buildTokenPair(user, sessionId);
+    rotateResult = await rotateRefreshTokenAtomic({
+      userId,
+      sessionId,
+      oldRawRefreshToken: rawRefreshToken,
+      newRawRefreshToken: tokens.refreshToken,
+    });
+  } else {
+    const migratedSessionId = newSessionId();
+    tokens = buildTokenPair(user, migratedSessionId);
+    rotateResult = await rotateLegacyRefreshTokenAtomic({
+      userId,
+      oldRawRefreshToken: rawRefreshToken,
+      newSessionIdValue: migratedSessionId,
+      newRawRefreshToken: tokens.refreshToken,
+    });
+  }
+
+  if (rotateResult === 0) {
+    throw createError('Refresh token has been revoked or does not exist.', 'REFRESH_TOKEN_REVOKED', 401);
+  }
+  if (rotateResult === -1) {
+    throw createError('Refresh token is stale or has already been rotated.', 'REFRESH_TOKEN_REPLAYED', 401);
+  }
 
   return {
     user: {
@@ -199,16 +308,18 @@ const refresh = async (rawRefreshToken) => {
   };
 };
 
-/**
- * Logout: delete the refresh token from Redis. Access token expires naturally.
- */
-const logout = async (userId) => {
-  await redis.del(refreshKey(userId));
+const logout = async (userId, sessionId) => {
+  if (sessionId) {
+    await deleteSessionToken(userId, sessionId);
+    return;
+  }
+
+  await Promise.all([
+    deleteAllUserSessionTokens(userId),
+    redis.del(legacyRefreshKey(userId)),
+  ]);
 };
 
-/**
- * Return the authenticated user's profile from the database.
- */
 const getMe = async (userId) => {
   const { rows } = await db.query(
     `SELECT id, org_id, email, role, is_active, created_at, updated_at

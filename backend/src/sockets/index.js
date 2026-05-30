@@ -47,6 +47,7 @@ function authMiddleware(socket, next) {
     org_id: decoded.org_id,
     email: decoded.email,
     role: decoded.role,
+    session_id: decoded.sid,
   };
 
   next();

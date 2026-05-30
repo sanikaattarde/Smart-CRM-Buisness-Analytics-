@@ -75,7 +75,7 @@ const refresh = async (req, res, next) => {
 const logout = async (req, res, next) => {
   try {
     // req.user is populated by authenticate middleware on this protected route.
-    await authService.logout(req.user.id);
+    await authService.logout(req.user.id, req.user.session_id);
     return success(res, {}, 'Logged out successfully.');
   } catch (err) {
     next(err);

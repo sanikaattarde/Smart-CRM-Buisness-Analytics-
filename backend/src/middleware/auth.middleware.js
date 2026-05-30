@@ -7,7 +7,7 @@ const { createError } = require('./errorHandler');
 /**
  * Validates the Bearer access token on every protected route.
  * On success, appends decoded payload to req.user:
- *   { sub, org_id, email, role }
+ *   { sub, org_id, email, role, sid }
  */
 const authenticate = (req, res, next) => {
   const authHeader = req.headers['authorization'];
@@ -31,6 +31,7 @@ const authenticate = (req, res, next) => {
     org_id: decoded.org_id,
     email: decoded.email,
     role: decoded.role,
+    session_id: decoded.sid,
   };
 
   next();

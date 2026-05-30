@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { User, DollarSign } from 'lucide-react';
 import { Draggable } from '@hello-pangea/dnd';
 
@@ -22,7 +23,7 @@ function getTierStyling(tier) {
  *   index: number,
  * }} props
  */
-export default function KanbanCard({ lead, index }) {
+function KanbanCard({ lead, index }) {
   const displayScore = lead.ai_score ?? lead.score;
   const rawTier = lead.ai_tier ?? (displayScore >= 70 ? 'Hot' : displayScore >= 40 ? 'Warm' : displayScore != null ? 'Cold' : null);
   const tier = getTierStyling(rawTier);
@@ -53,6 +54,7 @@ export default function KanbanCard({ lead, index }) {
           `}
           style={{
             ...provided.draggableProps.style,
+            contentVisibility: 'auto',
           }}
         >
           {/* Customer name */}
@@ -106,3 +108,5 @@ export default function KanbanCard({ lead, index }) {
     </Draggable>
   );
 }
+
+export default memo(KanbanCard);

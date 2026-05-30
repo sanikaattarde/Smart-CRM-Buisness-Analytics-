@@ -7,8 +7,9 @@ const logger = require('./shared/logger');
 const { pool } = require('./config/db');
 const redis = require('./config/redis');
 const { initSocketIO } = require('./sockets');
-const { initWorkers, shutdownWorkers } = require('./jobs/worker');
-const { registerSchedules } = require('./jobs/queue');
+const { emitNewInsight } = require('./sockets/crm.events');
+
+const INSIGHT_EVENT_CHANNEL = 'events:insight:new';
 
 // ---------------------------------------------------------------------------
 // HTTP server + Socket.IO binding
@@ -26,16 +27,48 @@ app.set('io', io);
 // request context (they can't access req.app.get('io')).
 global.__io = io;
 
-httpServer.listen(env.PORT, '0.0.0.0', async () => {
-  logger.info(`SmartCRM API listening on port ${env.PORT}`, {
-    env: env.NODE_ENV,
-    pid: process.pid,
-    socketIO: true,
+const redisSubscriber = redis.duplicate();
+
+async function initEventBridge() {
+  redisSubscriber.on('error', (err) => {
+    logger.error('Redis subscriber error', { error: err.message });
   });
 
-  // Start BullMQ workers and register cron schedules
-  initWorkers();
-  await registerSchedules();
+  redisSubscriber.on('message', (channel, rawMessage) => {
+    if (channel !== INSIGHT_EVENT_CHANNEL) return;
+
+    try {
+      const parsed = JSON.parse(rawMessage);
+      if (!parsed?.orgId || !parsed?.payload) return;
+      emitNewInsight(io, parsed.orgId, parsed.payload);
+    } catch (err) {
+      logger.error('Failed to process pub/sub insight event', {
+        error: err.message,
+        channel,
+      });
+    }
+  });
+
+  await redisSubscriber.subscribe(INSIGHT_EVENT_CHANNEL);
+  logger.info('Socket event bridge subscribed', { channel: INSIGHT_EVENT_CHANNEL });
+}
+
+httpServer.listen(env.PORT, '0.0.0.0', async () => {
+  try {
+    await initEventBridge();
+
+    logger.info(`SmartCRM API listening on port ${env.PORT}`, {
+      env: env.NODE_ENV,
+      pid: process.pid,
+      socketIO: true,
+    });
+  } catch (err) {
+    logger.error('Failed to initialize socket event bridge', {
+      error: err.message,
+      stack: err.stack,
+    });
+    process.exit(1);
+  }
 });
 
 // ---------------------------------------------------------------------------
@@ -43,15 +76,7 @@ httpServer.listen(env.PORT, '0.0.0.0', async () => {
 // ---------------------------------------------------------------------------
 const shutdown = async (signal) => {
   logger.info(`${signal} received — initiating graceful shutdown`);
-
-  // 1. Drain BullMQ workers (let in-flight jobs finish)
-  try {
-    await shutdownWorkers();
-  } catch (err) {
-    logger.error('Error shutting down BullMQ workers', { error: err.message });
-  }
-
-  // 2. Close Socket.IO (disconnects all sockets)
+  // 1. Close Socket.IO (disconnects all sockets)
   try {
     await new Promise((resolve) => io.close(resolve));
     logger.info('Socket.IO server closed');
@@ -59,7 +84,7 @@ const shutdown = async (signal) => {
     logger.error('Error closing Socket.IO', { error: err.message });
   }
 
-  // 3. Close HTTP server (stop accepting new connections)
+  // 2. Close HTTP server (stop accepting new connections)
   httpServer.close(async () => {
     logger.info('HTTP server closed');
 
@@ -68,6 +93,13 @@ const shutdown = async (signal) => {
       logger.info('PostgreSQL pool closed');
     } catch (err) {
       logger.error('Error closing PostgreSQL pool', { error: err.message });
+    }
+
+    try {
+      await redisSubscriber.quit();
+      logger.info('Redis subscriber closed');
+    } catch (err) {
+      logger.error('Error closing Redis subscriber', { error: err.message });
     }
 
     try {
@@ -100,4 +132,3 @@ process.on('uncaughtException', (err) => {
 });
 
 module.exports = httpServer;
-

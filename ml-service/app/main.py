@@ -65,7 +65,7 @@ def create_app() -> FastAPI:
 
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["http://backend:5000", "http://localhost:5000"],
+        allow_origins=["http://backend:3000", "http://localhost:3000"],
         allow_credentials=True,
         allow_methods=["GET", "POST"],
         allow_headers=["Content-Type", "Authorization"],
@@ -95,4 +95,3 @@ def create_app() -> FastAPI:
 
 
 app = create_app()
-

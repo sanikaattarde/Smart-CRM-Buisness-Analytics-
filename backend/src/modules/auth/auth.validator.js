@@ -43,12 +43,18 @@ const loginValidator = [
 
   body('password')
     .notEmpty().withMessage('Password is required.'),
+
+  body('org_id')
+    .trim()
+    .notEmpty().withMessage('org_id is required.')
+    .isUUID(4).withMessage('org_id must be a valid UUID v4.'),
 ];
 
 const refreshValidator = [
   body('refreshToken')
     .trim()
-    .notEmpty().withMessage('Refresh token is required.'),
+    .notEmpty().withMessage('Refresh token is required.')
+    .isLength({ max: 4096 }).withMessage('Refresh token is too long.'),
 ];
 
 module.exports = { registerValidator, loginValidator, refreshValidator };
