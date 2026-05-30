@@ -29,7 +29,7 @@ const CACHE_TTL_SECONDS = 6 * 60 * 60; // 6 hours
 
 const client = axios.create({
   baseURL: ML_SERVICE_URL,
-  timeout: 10_000,
+  timeout: 5_000,
   headers: { 'Content-Type': 'application/json' },
 });
 

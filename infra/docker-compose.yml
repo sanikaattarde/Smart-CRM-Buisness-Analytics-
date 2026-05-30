@@ -21,6 +21,14 @@ services:
 
   redis:
     image: redis:7-alpine
+    command:
+      - redis-server
+      - --appendonly
+      - "yes"
+      - --maxmemory-policy
+      - noeviction
+      - --maxmemory
+      - "0"
     restart: unless-stopped
     ports:
       - "6379:6379"

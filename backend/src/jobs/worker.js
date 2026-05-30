@@ -47,14 +47,15 @@ async function logTerminalFailure(job, err) {
     await db.query(
       `INSERT INTO activity_logs (org_id, entity_type, entity_id, action, type, metadata)
        VALUES (
-         (SELECT id FROM organizations WHERE is_active = true LIMIT 1),
+         $1,
          'background_job',
          gen_random_uuid(),
-         $1,
+         $2,
          'job_failure',
-         $2
+         $3
        )`,
       [
+        job.data.org_id,
         `Job "${job.name}" failed permanently after ${job.attemptsMade} attempt(s)`,
         JSON.stringify({
           queue: job.queueName,

@@ -87,42 +87,56 @@ const useAuthStore = create((set, get) => ({
       throw new Error('No refresh token available');
     }
 
-    // Use a raw axios instance to avoid interceptor recursion.
     const baseURL = import.meta.env.VITE_API_BASE_URL || '/api/v1';
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 8000);
-    let response;
+    const MAX_RETRIES = 2;
+    let lastError;
 
-    try {
-      response = await fetch(`${baseURL}/auth/refresh`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ refreshToken }),
-        signal: controller.signal,
-      });
-    } finally {
-      clearTimeout(timeoutId);
-    }
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 8000);
 
-    if (!response.ok) {
-      let serverMessage = 'Refresh failed';
       try {
-        const body = await response.json();
-        serverMessage = body?.error?.message || serverMessage;
-      } catch {
-        // Ignore parse failure and keep default message.
-      }
+        const response = await fetch(`${baseURL}/auth/refresh`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ refreshToken }),
+          signal: controller.signal,
+        });
+        clearTimeout(timeoutId);
 
-      get().clearSession();
-      throw new Error(serverMessage);
+        if (!response.ok) {
+          const body = await response.json().catch(() => ({}));
+          const code = body?.error?.code;
+          // Only clear session on definitive rejection
+          if (
+            code === 'REFRESH_TOKEN_REPLAYED' ||
+            code === 'REFRESH_TOKEN_REVOKED' ||
+            code === 'INVALID_REFRESH_TOKEN' ||
+            code === 'ACCOUNT_DISABLED'
+          ) {
+            get().clearSession();
+          }
+          throw new Error(body?.error?.message || 'Refresh failed');
+        }
+
+        const result = await response.json();
+        const { user, accessToken: newAccess, refreshToken: newRefresh } = result.data;
+        
+        localStorage.setItem(REFRESH_TOKEN_KEY, newRefresh);
+        set({ user, accessToken: newAccess, refreshToken: newRefresh, isAuthenticated: true });
+        return newAccess;
+      } catch (err) {
+        clearTimeout(timeoutId);
+        lastError = err;
+        // Only retry on network errors, not auth rejections
+        const isNetworkError =
+          err.name === 'AbortError' || err.name === 'TypeError' || err.message === 'Failed to fetch';
+        if (!isNetworkError || attempt === MAX_RETRIES) break;
+        await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
+      }
     }
 
-    const result = await response.json();
-    const { user, accessToken: newAccess, refreshToken: newRefresh } = result.data;
-
-    localStorage.setItem(REFRESH_TOKEN_KEY, newRefresh);
-    set({ user, accessToken: newAccess, refreshToken: newRefresh, isAuthenticated: true });
-    return newAccess;
+    throw lastError;
   },
 
   /**

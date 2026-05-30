@@ -8,7 +8,7 @@ const logger = require('../shared/logger');
 
 const INSIGHTS_CACHE_KEY = 'ml:insights:latest';
 const INSIGHTS_CACHE_TTL = 4 * 60 * 60; // 4 hours (matches cron interval)
-const INSIGHT_EVENT_CHANNEL = 'events:insight:new';
+const INSIGHT_EVENT_STREAM = 'stream:events:insight:new';
 
 /**
  * Fetch ML-generated insights, cache them in Redis,
@@ -59,11 +59,12 @@ module.exports = async function generateInsights(job) {
           summary,
         };
 
-        // If workers run in a separate process, API instances will fan-out
-        // through this Redis pub/sub channel.
-        await redis.publish(
-          INSIGHT_EVENT_CHANNEL,
-          JSON.stringify({ orgId: org.id, payload })
+        // Use Redis Streams instead of pub/sub to guarantee delivery
+        await redis.xadd(
+          INSIGHT_EVENT_STREAM,
+          '*',
+          'orgId', org.id,
+          'payload', JSON.stringify(payload)
         );
 
         // Backward-compatibility for single-process local runtime.

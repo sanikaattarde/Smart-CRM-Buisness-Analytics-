@@ -15,6 +15,9 @@ import logging
 import pathlib
 from uuid import UUID
 
+import asyncio
+from functools import partial
+
 import numpy as np
 import pandas as pd
 from fastapi import APIRouter, HTTPException, Request, status
@@ -214,7 +217,9 @@ async def predict_churn(body: ChurnRequest, request: Request) -> ChurnResponse:
     pipeline = _get_model(request, "churn")
     X = _features_to_df(body.features, CHURN_FEATURES)
 
-    proba = pipeline.predict_proba(X)[0]
+    loop = asyncio.get_event_loop()
+    proba_all = await loop.run_in_executor(None, partial(pipeline.predict_proba, X))
+    proba = proba_all[0]
     churn_prob = float(proba[1])
     confidence = float(max(proba))
 
@@ -233,7 +238,8 @@ async def predict_revenue(body: RevenueRequest, request: Request) -> RevenueResp
     bundle = _get_model(request, "revenue")
     X = _features_to_df(body.features, REVENUE_FEATURES)
 
-    result = predict_with_interval(bundle, X, z=1.0)
+    loop = asyncio.get_event_loop()
+    result = await loop.run_in_executor(None, partial(predict_with_interval, bundle, X, z=1.0))
     row = result.iloc[0]
 
     logger.info(
@@ -254,7 +260,8 @@ async def predict_lead_score(body: LeadScoreRequest, request: Request) -> LeadSc
     pipeline = _get_model(request, "lead_scorer")
     X = _features_to_df(body.features, LEAD_FEATURES)
 
-    scores_df = score_leads(pipeline, X)
+    loop = asyncio.get_event_loop()
+    scores_df = await loop.run_in_executor(None, partial(score_leads, pipeline, X))
     row = scores_df.iloc[0]
 
     logger.info(
@@ -281,7 +288,9 @@ async def get_insights(request: Request) -> InsightsResponse:
     leads_df = pd.read_csv(leads_path)
 
     churn_features = customers_df[CHURN_FEATURES]
-    churn_proba = churn_model.predict_proba(churn_features)[:, 1]
+    loop = asyncio.get_event_loop()
+    churn_proba_full = await loop.run_in_executor(None, partial(churn_model.predict_proba, churn_features))
+    churn_proba = churn_proba_full[:, 1]
 
     rev_pipe = revenue_bundle["pipeline"]
 
@@ -308,7 +317,7 @@ async def get_insights(request: Request) -> InsightsResponse:
         "pipeline_value": np.round(pipeline_val, 2),
         "headcount": headcount.astype(int),
     })
-    revenue_predictions = rev_pipe.predict(rev_X)
+    revenue_predictions = await loop.run_in_executor(None, partial(rev_pipe.predict, rev_X))
 
     customer_states = build_customer_states_from_predictions(
         customers_df, churn_proba, revenue_predictions

@@ -9,7 +9,7 @@ const redis = require('./config/redis');
 const { initSocketIO } = require('./sockets');
 const { emitNewInsight } = require('./sockets/crm.events');
 
-const INSIGHT_EVENT_CHANNEL = 'events:insight:new';
+const INSIGHT_EVENT_STREAM = 'stream:events:insight:new';
 
 // ---------------------------------------------------------------------------
 // HTTP server + Socket.IO binding
@@ -30,27 +30,51 @@ global.__io = io;
 const redisSubscriber = redis.duplicate();
 
 async function initEventBridge() {
-  redisSubscriber.on('error', (err) => {
-    logger.error('Redis subscriber error', { error: err.message });
-  });
+  const cursorKey = `cursor:stream:api:${require('os').hostname()}`;
+  let lastId = '$';
 
-  redisSubscriber.on('message', (channel, rawMessage) => {
-    if (channel !== INSIGHT_EVENT_CHANNEL) return;
+  try {
+    const saved = await redis.get(cursorKey);
+    if (saved) lastId = saved;
+  } catch (err) {
+    logger.warn('Failed to load stream cursor', { error: err.message });
+  }
 
-    try {
-      const parsed = JSON.parse(rawMessage);
-      if (!parsed?.orgId || !parsed?.payload) return;
-      emitNewInsight(io, parsed.orgId, parsed.payload);
-    } catch (err) {
-      logger.error('Failed to process pub/sub insight event', {
-        error: err.message,
-        channel,
-      });
+  async function pollStream() {
+    if (redisSubscriber.status !== 'ready') {
+      setTimeout(pollStream, 1000);
+      return;
     }
-  });
+    
+    try {
+      const results = await redisSubscriber.xread('BLOCK', 5000, 'STREAMS', INSIGHT_EVENT_STREAM, lastId);
+      if (results) {
+        const messages = results[0][1];
+        for (const [id, fields] of messages) {
+          lastId = id;
+          let orgId, payloadStr;
+          for (let i = 0; i < fields.length; i += 2) {
+            if (fields[i] === 'orgId') orgId = fields[i + 1];
+            if (fields[i] === 'payload') payloadStr = fields[i + 1];
+          }
+          if (orgId && payloadStr) {
+            emitNewInsight(io, orgId, JSON.parse(payloadStr));
+          }
+        }
+        await redisSubscriber.set(cursorKey, lastId);
+      }
+    } catch (err) {
+      if (err.message !== 'Connection is closed.') {
+        logger.error('Failed to process stream event', { error: err.message });
+      }
+    }
+    
+    // Use setTimeout instead of setImmediate to avoid tight loops on errors
+    setTimeout(pollStream, 0);
+  }
 
-  await redisSubscriber.subscribe(INSIGHT_EVENT_CHANNEL);
-  logger.info('Socket event bridge subscribed', { channel: INSIGHT_EVENT_CHANNEL });
+  pollStream();
+  logger.info('Socket event bridge listening on stream', { stream: INSIGHT_EVENT_STREAM });
 }
 
 httpServer.listen(env.PORT, '0.0.0.0', async () => {

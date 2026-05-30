@@ -1,9 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   AreaChart, Area, 
   BarChart, Bar, 
   RadialBarChart, RadialBar, PolarAngleAxis,
-  ComposedChart, Line, CartesianGrid, XAxis, YAxis, Tooltip, Legend
+  ResponsiveContainer, ComposedChart, Line, CartesianGrid, XAxis, YAxis, Tooltip, Legend
 } from 'recharts';
 import { Rocket, Plus, Target, FileText, Activity } from 'lucide-react';
 import KPICard from './components/KPICard';
@@ -114,6 +114,98 @@ export default function DashboardPage() {
   const activeLeads = 92;
   const customerHealth = 85;
 
+  const revenueChart = useMemo(() => (
+    <AreaChart data={REVENUE_DATA} margin={{ top: 5, right: 0, left: 0, bottom: 0 }}>
+      <defs>
+        <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3} />
+          <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
+        </linearGradient>
+      </defs>
+      <Tooltip content={<CustomTooltip />} cursor={false} />
+      <Area 
+        type="monotone" 
+        dataKey="value" 
+        stroke="#3b82f6" 
+        strokeWidth={2}
+        fill="url(#colorValue)" 
+        isAnimationActive={false}
+        activeDot={{ r: 4 }} 
+      />
+      <Area 
+        type="monotone" 
+        dataKey="forecast" 
+        stroke="#8b5cf6" 
+        strokeWidth={2}
+        strokeDasharray="5 5" 
+        fill="none" 
+        isAnimationActive={false}
+        activeDot={{ r: 4 }} 
+      />
+    </AreaChart>
+  ), []);
+
+  const activeLeadsChart = useMemo(() => (
+    <BarChart data={LEADS_DATA} margin={{ top: 5, right: 0, left: 0, bottom: 0 }}>
+      <Tooltip content={<CustomTooltip />} cursor={{ fill: '#1e293b' }} />
+      <Bar dataKey="count" fill="#6366f1" radius={[4, 4, 0, 0]} isAnimationActive={false} />
+    </BarChart>
+  ), []);
+
+  const customerHealthChart = useMemo(() => (
+    <RadialBarChart 
+      cx="50%" cy="50%" innerRadius="70%" outerRadius="100%" 
+      barSize={8} data={[{ name: 'Health', value: customerHealth }]} 
+      startAngle={180} endAngle={0}
+    >
+      <PolarAngleAxis type="number" domain={[0, 100]} angleAxisId={0} tick={false} />
+      <RadialBar
+        minAngle={15}
+        background={{ fill: '#1e293b' }}
+        clockWise
+        dataKey="value"
+        cornerRadius={4}
+        isAnimationActive={false}
+        fill={customerHealth >= 80 ? '#22c55e' : customerHealth >= 50 ? '#eab308' : '#ef4444'}
+      />
+    </RadialBarChart>
+  ), [customerHealth]);
+
+  const winRateData = useMemo(() => [...REVENUE_DATA].reverse(), []);
+  const winRateChart = useMemo(() => (
+    <AreaChart data={winRateData} margin={{ top: 5, right: 0, left: 0, bottom: 0 }}>
+       <defs>
+        <linearGradient id="colorWin" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="5%" stopColor="#ef4444" stopOpacity={0.3} />
+          <stop offset="95%" stopColor="#ef4444" stopOpacity={0} />
+        </linearGradient>
+      </defs>
+      <Tooltip content={<CustomTooltip />} cursor={false} />
+      <Area 
+        type="monotone" 
+        dataKey="value" 
+        stroke="#ef4444" 
+        strokeWidth={2}
+        fill="url(#colorWin)" 
+        isAnimationActive={false}
+      />
+    </AreaChart>
+  ), [winRateData]);
+
+  const revenueVsTargetChart = useMemo(() => (
+    <ResponsiveContainer width="100%" height="100%">
+      <ComposedChart data={TARGET_DATA} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
+        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#1e293b" />
+        <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 12 }} dy={10} />
+        <YAxis axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 12 }} tickFormatter={(val) => `$${val / 1000}k`} />
+        <Tooltip content={<CustomTooltip />} cursor={{ fill: '#1e293b' }} />
+        <Legend wrapperStyle={{ paddingTop: '20px' }} iconType="circle" />
+        <Bar name="Target Revenue" dataKey="target" fill="#334155" radius={[4, 4, 0, 0]} maxBarSize={40} />
+        <Line name="Actual Revenue" type="monotone" dataKey="actual" stroke="#3b82f6" strokeWidth={3} dot={{ r: 4, fill: '#3b82f6', strokeWidth: 0 }} activeDot={{ r: 6, strokeWidth: 0 }} isAnimationActive={false} />
+      </ComposedChart>
+    </ResponsiveContainer>
+  ), []);
+
   return (
     <div className="mx-auto w-full max-w-7xl space-y-8 p-6 animate-fade-in">
       {/* Header Module & Action Row */}
@@ -152,80 +244,19 @@ export default function DashboardPage() {
           <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-4">
             
             <KPICard title="Total Revenue" value="$124,500" trend="+12.5%" trendDirection="up">
-              <AreaChart data={REVENUE_DATA} margin={{ top: 5, right: 0, left: 0, bottom: 0 }}>
-                <defs>
-                  <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3} />
-                    <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <Tooltip content={<CustomTooltip />} cursor={false} />
-                <Area 
-                  type="monotone" 
-                  dataKey="value" 
-                  stroke="#3b82f6" 
-                  strokeWidth={2}
-                  fill="url(#colorValue)" 
-                  isAnimationActive={false}
-                  activeDot={{ r: 4 }} 
-                />
-                <Area 
-                  type="monotone" 
-                  dataKey="forecast" 
-                  stroke="#8b5cf6" 
-                  strokeWidth={2}
-                  strokeDasharray="5 5" 
-                  fill="none" 
-                  isAnimationActive={false}
-                  activeDot={{ r: 4 }} 
-                />
-              </AreaChart>
+              {revenueChart}
             </KPICard>
 
             <KPICard title="Active Leads" value="92" trend="+4" trendDirection="up">
-              <BarChart data={LEADS_DATA} margin={{ top: 5, right: 0, left: 0, bottom: 0 }}>
-                <Tooltip content={<CustomTooltip />} cursor={{ fill: '#1e293b' }} />
-                <Bar dataKey="count" fill="#6366f1" radius={[4, 4, 0, 0]} isAnimationActive={false} />
-              </BarChart>
+              {activeLeadsChart}
             </KPICard>
 
-            <KPICard title="Customer Health" value="85 / 100" trend="+2.1" trendDirection="up">
-              <RadialBarChart 
-                cx="50%" cy="50%" innerRadius="70%" outerRadius="100%" 
-                barSize={8} data={[{ name: 'Health', value: customerHealth }]} 
-                startAngle={180} endAngle={0}
-              >
-                <PolarAngleAxis type="number" domain={[0, 100]} angleAxisId={0} tick={false} />
-                <RadialBar
-                  minAngle={15}
-                  background={{ fill: '#1e293b' }}
-                  clockWise
-                  dataKey="value"
-                  cornerRadius={4}
-                  isAnimationActive={false}
-                  fill={customerHealth >= 80 ? '#22c55e' : customerHealth >= 50 ? '#eab308' : '#ef4444'}
-                />
-              </RadialBarChart>
+            <KPICard title="Customer Health" value={`${customerHealth} / 100`} trend="+2.1" trendDirection="up">
+              {customerHealthChart}
             </KPICard>
 
             <KPICard title="Win Rate" value="32.4%" trend="-1.2%" trendDirection="down">
-              <AreaChart data={[...REVENUE_DATA].reverse()} margin={{ top: 5, right: 0, left: 0, bottom: 0 }}>
-                 <defs>
-                  <linearGradient id="colorWin" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#ef4444" stopOpacity={0.3} />
-                    <stop offset="95%" stopColor="#ef4444" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <Tooltip content={<CustomTooltip />} cursor={false} />
-                <Area 
-                  type="monotone" 
-                  dataKey="value" 
-                  stroke="#ef4444" 
-                  strokeWidth={2}
-                  fill="url(#colorWin)" 
-                  isAnimationActive={false}
-                />
-              </AreaChart>
+              {winRateChart}
             </KPICard>
           </div>
 
@@ -239,17 +270,7 @@ export default function DashboardPage() {
                 <p className="text-sm text-text-secondary">Monthly performance against sales goals.</p>
               </div>
               <div className="h-[300px] w-full">
-                <ResponsiveContainer width="100%" height="100%">
-                  <ComposedChart data={TARGET_DATA} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#1e293b" />
-                    <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 12 }} dy={10} />
-                    <YAxis axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 12 }} tickFormatter={(val) => `$${val / 1000}k`} />
-                    <Tooltip content={<CustomTooltip />} cursor={{ fill: '#1e293b' }} />
-                    <Legend wrapperStyle={{ paddingTop: '20px' }} iconType="circle" />
-                    <Bar name="Target Revenue" dataKey="target" fill="#334155" radius={[4, 4, 0, 0]} maxBarSize={40} />
-                    <Line name="Actual Revenue" type="monotone" dataKey="actual" stroke="#3b82f6" strokeWidth={3} dot={{ r: 4, fill: '#3b82f6', strokeWidth: 0 }} activeDot={{ r: 6, strokeWidth: 0 }} isAnimationActive={false} />
-                  </ComposedChart>
-                </ResponsiveContainer>
+                {revenueVsTargetChart}
               </div>
             </div>
 

@@ -2,7 +2,7 @@ import React from 'react';
 import { ArrowUpRight, ArrowDownRight, Minus } from 'lucide-react';
 import { ResponsiveContainer } from 'recharts';
 
-export default function KPICard({ title, value, trend, trendDirection, children }) {
+export default React.memo(function KPICard({ title, value, trend, trendDirection, children }) {
   const isUp = trendDirection === 'up';
   const isDown = trendDirection === 'down';
   const isFlat = trendDirection === 'flat';

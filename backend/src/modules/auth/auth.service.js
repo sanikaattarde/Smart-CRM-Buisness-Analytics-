@@ -25,12 +25,27 @@ if not current then
   return 0
 end
 
-if current ~= ARGV[1] then
-  return -1
+if current == ARGV[1] then
+  -- Happy path: CAS succeeds
+  redis.call('SET', KEYS[1], ARGV[2], 'EX', tonumber(ARGV[3]))
+  
+  -- Grace window: keep old hash for 30s so concurrent tabs can detect a benign race
+  local grace_key = KEYS[1] .. ':prev'
+  redis.call('SET', grace_key, ARGV[1], 'EX', 30)
+  
+  return 1
 end
 
-redis.call('SET', KEYS[1], ARGV[2], 'EX', tonumber(ARGV[3]))
-return 1
+-- Mismatch — check if a rotation happened in the grace window
+local grace_key = KEYS[1] .. ':prev'
+local prev = redis.call('GET', grace_key)
+if prev and prev == ARGV[1] then
+  -- The old token was *just* rotated by a concurrent request.
+  -- Return 2 = "stale but within grace; re-issue against current."
+  return 2
+end
+
+return -1
 `;
 
 const LEGACY_REFRESH_ROTATION_LUA = `
@@ -295,6 +310,12 @@ const refresh = async (rawRefreshToken) => {
   }
   if (rotateResult === -1) {
     throw createError('Refresh token is stale or has already been rotated.', 'REFRESH_TOKEN_REPLAYED', 401);
+  }
+  if (rotateResult === 2) {
+    // Concurrent refresh race detected. Issue a new token pair to satisfy this tab's request.
+    // The previous tab's refresh token will be overwritten in Redis, but both tabs share localStorage,
+    // so they will eventually converge on the latest refresh token.
+    tokens = await issueTokenPair(user, sessionId);
   }
 
   return {

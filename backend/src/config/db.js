@@ -33,6 +33,31 @@ pool.on('error', (err) => {
 const query = (text, params) => pool.query(text, params);
 
 /**
+ * Execute a parameterised query with tenant context for Row-Level Security (RLS).
+ *
+ * @param {string}  orgId  - The organization ID to set in the database session.
+ * @param {string}  text   - SQL statement with $1, $2, … placeholders.
+ * @param {Array}   params - Ordered parameter values.
+ * @returns {Promise<import('pg').QueryResult>}
+ */
+const tenantQuery = async (orgId, text, params) => {
+  const client = await pool.connect();
+  try {
+    await client.query('SELECT set_tenant_context($1)', [orgId]);
+    const result = await client.query(text, params);
+    return result;
+  } finally {
+    // Note: the setting is cleared or reset to default if necessary, 
+    // but typically `set_config('app.current_org_id', ..., true)` binds to the transaction.
+    // However, since we are not in a transaction here, the setting persists on the connection.
+    // To be safe, we should reset it or use a transaction.
+    // Let's explicitly clear it before release to avoid connection contamination.
+    await client.query("SELECT set_config('app.current_org_id', '', false)");
+    client.release();
+  }
+};
+
+/**
  * Acquire a dedicated client for multi-statement transactions.
  * Caller is responsible for releasing the client via client.release().
  *
@@ -40,4 +65,5 @@ const query = (text, params) => pool.query(text, params);
  */
 const getClient = () => pool.connect();
 
-module.exports = { query, getClient, pool };
+module.exports = { query, tenantQuery, getClient, pool };
+

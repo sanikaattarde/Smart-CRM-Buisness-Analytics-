@@ -75,9 +75,30 @@ function onConnection(socket) {
     email,
   });
 
+  // --- token re-validation -----------------------------------------------
+  
+  // Re-validate token every 5 minutes
+  const validationInterval = setInterval(() => {
+    const token = socket.handshake.auth?.token;
+    if (!token) {
+      socket.disconnect(true);
+      return;
+    }
+    try {
+      jwt.verify(token, env.JWT_SECRET, { algorithms: ['HS256'] });
+    } catch (err) {
+      logger.warn('socket: periodic token validation failed, disconnecting', {
+        socketId: socket.id,
+        reason: err.message,
+      });
+      socket.disconnect(true);
+    }
+  }, 5 * 60 * 1000);
+
   // --- client-initiated events (future expansion) --------------------------
 
   socket.on('disconnect', (reason) => {
+    clearInterval(validationInterval);
     logger.info('socket:disconnected', {
       socketId: socket.id,
       userId: id,
