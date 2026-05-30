@@ -3,7 +3,7 @@ import ProtectedRoute from './ProtectedRoute';
 import AppLayout from '../components/layout/AppLayout';
 import DashboardPage from '../features/dashboard/DashboardPage';
 import LeadPipelinePage from '../features/leads/LeadPipelinePage';
-
+import LoginPage from '../features/auth/LoginPage';
 /* --------------------------------------------------------------------------
    Placeholder (for pages not yet built)
    -------------------------------------------------------------------------- */
@@ -20,23 +20,6 @@ function PlaceholderPage({ title }) {
   );
 }
 
-function LoginPage() {
-  return (
-    <div className="min-h-screen flex items-center justify-center bg-base">
-      <div className="card p-8 w-full max-w-md animate-slide-up">
-        <h1 className="text-2xl font-bold text-text-primary mb-2">Sign in to SmartCRM</h1>
-        <p className="text-sm text-text-secondary mb-6">
-          Login form will be built in a future phase.
-        </p>
-        <div className="space-y-4">
-          <div className="h-10 rounded-md bg-base-elevated border border-border" />
-          <div className="h-10 rounded-md bg-base-elevated border border-border" />
-          <div className="h-10 rounded-md bg-accent" />
-        </div>
-      </div>
-    </div>
-  );
-}
 
 /* --------------------------------------------------------------------------
    Route Tree
