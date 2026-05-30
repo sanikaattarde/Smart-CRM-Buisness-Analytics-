@@ -1,294 +1,288 @@
-import { useEffect, useState, useMemo } from 'react';
-import {
-  AreaChart, Area,
-  BarChart, Bar,
-  LineChart, Line,
+import React, { useState, useEffect } from 'react';
+import { 
+  AreaChart, Area, 
+  BarChart, Bar, 
   RadialBarChart, RadialBar, PolarAngleAxis,
-  ResponsiveContainer, Tooltip, XAxis, YAxis, CartesianGrid,
+  ComposedChart, Line, CartesianGrid, XAxis, YAxis, Tooltip, Legend
 } from 'recharts';
-import { DollarSign, Target, TrendingUp, HeartPulse } from 'lucide-react';
+import { Rocket, Plus, Target, FileText, Activity } from 'lucide-react';
 import KPICard from './components/KPICard';
-import SkeletonCard from './components/SkeletonCard';
-import api from '../../services/api';
 
-/* --------------------------------------------------------------------------
-   Custom tooltip for mini charts
-   -------------------------------------------------------------------------- */
+const MOCK_ACTIVITY = [
+  { id: 1, type: 'stage_change', user: 'JD', action: 'moved Lead X to Proposal', time: '2m ago' },
+  { id: 2, type: 'task', user: 'AK', action: 'completed Onboarding Call', time: '1h ago' },
+  { id: 3, type: 'new_lead', user: 'AI', action: 'scored New Inbound Lead as Hot', time: '3h ago' },
+  { id: 4, type: 'deal_won', user: 'JD', action: 'closed Acme Corp Deal', time: '5h ago' }
+];
 
-function MiniTooltip({ active, payload, valuePrefix = '', valueSuffix = '' }) {
-  if (!active || !payload?.length) return null;
-  return (
-    <div className="rounded-md border border-border bg-base-elevated px-2.5 py-1.5 shadow-lg text-xs space-y-1">
-      {payload.map((p, i) => {
-        // Hide the confidence band from the tooltip
-        if (p.name === 'Confidence Range') return null;
-        return (
-          <div key={i} className="flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full" style={{ backgroundColor: p.color || p.fill }} />
+const REVENUE_DATA = [
+  { name: 'Mon', value: 12000 },
+  { name: 'Tue', value: 19000 },
+  { name: 'Wed', value: 15000 },
+  { name: 'Thu', value: 22000 },
+  { name: 'Fri', value: 28000, forecast: 28000 },
+  { name: 'Sat', forecast: 32000 },
+  { name: 'Sun', forecast: 36000 }
+];
+
+const LEADS_DATA = [
+  { name: 'New', count: 42 },
+  { name: 'Contacted', count: 28 },
+  { name: 'Qualified', count: 15 },
+  { name: 'Proposal', count: 7 }
+];
+
+const TARGET_DATA = [
+  { month: 'Jan', target: 50000, actual: 48000 },
+  { month: 'Feb', target: 55000, actual: 59000 },
+  { month: 'Mar', target: 60000, actual: 58000 },
+  { month: 'Apr', target: 65000, actual: 72000 },
+  { month: 'May', target: 70000, actual: 85000 },
+  { month: 'Jun', target: 75000, actual: 91000 }
+];
+
+function CustomTooltip({ active, payload, label }) {
+  if (active && payload && payload.length) {
+    return (
+      <div className="rounded-md border border-border bg-base-elevated p-3 shadow-lg">
+        <p className="mb-2 text-sm font-medium text-text-primary">{label}</p>
+        {payload.map((entry, index) => (
+          <div key={index} className="flex items-center gap-2 text-xs">
+            <div className="h-2 w-2 rounded-full" style={{ backgroundColor: entry.color }} />
+            <span className="text-text-secondary">{entry.name}:</span>
             <span className="font-semibold text-text-primary">
-              {p.name}: {valuePrefix}{p.value?.toLocaleString()}{valueSuffix}
+              {typeof entry.value === 'number' ? entry.value.toLocaleString() : entry.value}
             </span>
           </div>
-        );
-      })}
-    </div>
-  );
-}
-
-/* --------------------------------------------------------------------------
-   Dashboard Page
-   -------------------------------------------------------------------------- */
-
-export default function DashboardPage() {
-  const [loading, setLoading] = useState(true);
-  const [kpis, setKpis] = useState(null);
-  const [revenueTrend, setRevenueTrend] = useState([]);
-  const [leadsByStage, setLeadsByStage] = useState([]);
-  const [conversionTrend, setConversionTrend] = useState([]);
-  const [healthScore, setHealthScore] = useState(0);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    async function fetchDashboard() {
-      try {
-        const [kpisRes, revenueRes, funnelRes, forecastRes] = await Promise.all([
-          api.get('/analytics/kpis'),
-          api.get('/analytics/revenue-trend'),
-          api.get('/analytics/lead-funnel'),
-          api.get('/analytics/forecast').catch(() => ({ data: { data: null } }))
-        ]);
-
-        if (cancelled) return;
-
-        const kpisData = kpisRes.data.data || {};
-        setKpis({
-          totalRevenue: kpisData.total_revenue ?? 0,
-          revenueChange: kpisData.revenue_change ?? 0,
-          activeLeads: kpisData.active_leads ?? 0,
-          leadsChange: kpisData.leads_change ?? 0,
-          conversionRate: kpisData.conversion_rate ?? 0,
-          conversionChange: kpisData.conversion_change ?? 0,
-          avgHealthScore: kpisData.avg_health_score ?? 0,
-          healthChange: kpisData.health_change ?? 0,
-        });
-
-        // The historical revenue array
-        let revData = revenueRes.data.data || [];
-        
-        // ML Forecast Overlay
-        const forecastData = forecastRes.data.data;
-        if (forecastData && forecastData.forecast && revData.length > 0) {
-          const lastPoint = revData[revData.length - 1];
-          // Anchor the forecast lines to the last historical point
-          lastPoint.forecastValue = lastPoint.value;
-          lastPoint.forecastBand = [lastPoint.value, lastPoint.value];
-
-          // Append future projection
-          revData.push({
-            day: 'Forecast',
-            forecastValue: forecastData.forecast,
-            forecastBand: forecastData.range || [forecastData.forecast * 0.9, forecastData.forecast * 1.1]
-          });
-        }
-        
-        setRevenueTrend(revData);
-        setLeadsByStage(funnelRes.data.data || []);
-        
-        // Static conversion trend since backend doesn't provide it yet
-        setConversionTrend([
-          { week: 'W1', rate: 21 }, { week: 'W2', rate: 22 }, { week: 'W3', rate: 23 },
-          { week: 'W4', rate: Math.round(kpisData.conversion_rate || 24) }
-        ]);
-        
-        setHealthScore(kpisData.avg_health_score ?? 0);
-      } catch (err) {
-        console.error('Failed to fetch dashboard data', err);
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    }
-
-    fetchDashboard();
-    return () => { cancelled = true; };
-  }, []);
-
-  const healthData = useMemo(
-    () => [{ name: 'Health', value: healthScore, fill: 'var(--color-accent)' }],
-    [healthScore]
-  );
-
-  if (loading || !kpis) {
-    return (
-      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-4">
-        {Array.from({ length: 4 }).map((_, i) => (
-          <SkeletonCard key={i} />
         ))}
       </div>
     );
   }
+  return null;
+}
+
+function DashboardEmptyState() {
+  return (
+    <div className="col-span-full flex flex-col items-center justify-center rounded-xl border border-border bg-base-elevated py-20 px-4 text-center">
+      <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-accent/10">
+        <Rocket size={32} className="text-accent" />
+      </div>
+      <h2 className="mb-2 text-xl font-bold text-text-primary">Let's get your pipeline flowing</h2>
+      <p className="mb-6 max-w-md text-sm text-text-secondary">
+        Connect your data to unlock powerful AI insights, revenue forecasting, and customer health tracking.
+      </p>
+      <button className="rounded-lg bg-accent px-6 py-2.5 font-medium text-white transition-colors hover:bg-accent-hover">
+        Add Your First Lead
+      </button>
+    </div>
+  );
+}
+
+function LoadingSkeleton() {
+  return (
+    <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-4">
+      {Array.from({ length: 4 }).map((_, i) => (
+        <div key={i} className="flex h-40 flex-col justify-between rounded-xl border border-border bg-base-elevated p-5 shadow-sm animate-pulse">
+          <div className="flex justify-between">
+            <div className="space-y-2">
+              <div className="h-4 w-24 rounded bg-base-surface" />
+              <div className="h-8 w-32 rounded bg-base-surface" />
+            </div>
+            <div className="h-6 w-16 rounded-full bg-base-surface" />
+          </div>
+          <div className="h-16 w-full rounded bg-base-surface" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+export default function DashboardPage() {
+  const [isLoading, setIsLoading] = useState(true);
+  const [hasData, setHasData] = useState(false);
+
+  useEffect(() => {
+    // Simulate data fetching
+    const timer = setTimeout(() => {
+      setIsLoading(false);
+      setHasData(true); // Toggle this to test empty state
+    }, 1000);
+    return () => clearTimeout(timer);
+  }, []);
+
+  const totalRevenue = 124500;
+  const activeLeads = 92;
+  const customerHealth = 85;
 
   return (
-    <div className="space-y-6 animate-fade-in">
-      <div>
-        <h2 className="text-sm font-medium text-text-secondary mb-1">Overview</h2>
-        <p className="text-xs text-text-muted">Real-time business metrics</p>
+    <div className="mx-auto w-full max-w-7xl space-y-8 p-6 animate-fade-in">
+      {/* Header Module & Action Row */}
+      <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight text-text-primary">Dashboard</h1>
+          <p className="mt-1 text-sm text-text-secondary">Welcome back. Here is your business at a glance.</p>
+        </div>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+          <select className="h-9 rounded-md border border-border bg-base-surface px-3 text-sm font-medium text-text-primary outline-none focus:ring-2 focus:ring-accent/50">
+            <option>Last 7 Days</option>
+            <option>Last 30 Days</option>
+            <option>This Quarter</option>
+          </select>
+          <div className="flex items-center gap-2">
+            <button className="flex h-9 items-center gap-2 rounded-md bg-transparent px-3 text-sm font-medium text-text-secondary transition-colors hover:bg-slate-800 hover:text-text-primary">
+              <Plus size={16} /> Add Lead
+            </button>
+            <button className="flex h-9 items-center gap-2 rounded-md bg-transparent px-3 text-sm font-medium text-text-secondary transition-colors hover:bg-slate-800 hover:text-text-primary">
+              <Target size={16} /> New Task
+            </button>
+            <button className="flex h-9 items-center gap-2 rounded-md bg-transparent px-3 text-sm font-medium text-text-secondary transition-colors hover:bg-slate-800 hover:text-text-primary">
+              <FileText size={16} /> AI Report
+            </button>
+          </div>
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-4">
+      {isLoading ? (
+        <LoadingSkeleton />
+      ) : !hasData || (totalRevenue === 0 && activeLeads === 0) ? (
+        <DashboardEmptyState />
+      ) : (
+        <>
+          {/* KPI Grid */}
+          <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-4">
+            
+            <KPICard title="Total Revenue" value="$124,500" trend="+12.5%" trendDirection="up">
+              <AreaChart data={REVENUE_DATA} margin={{ top: 5, right: 0, left: 0, bottom: 0 }}>
+                <defs>
+                  <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3} />
+                    <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <Tooltip content={<CustomTooltip />} cursor={false} />
+                <Area 
+                  type="monotone" 
+                  dataKey="value" 
+                  stroke="#3b82f6" 
+                  strokeWidth={2}
+                  fill="url(#colorValue)" 
+                  activeDot={{ r: 4 }} 
+                />
+                <Area 
+                  type="monotone" 
+                  dataKey="forecast" 
+                  stroke="#8b5cf6" 
+                  strokeWidth={2}
+                  strokeDasharray="5 5" 
+                  fill="none" 
+                  activeDot={{ r: 4 }} 
+                />
+              </AreaChart>
+            </KPICard>
 
-        {/* ---- Total Revenue & AI Forecast ---- */}
-        <KPICard
-          title="Total Revenue"
-          value={`$${kpis.totalRevenue.toLocaleString()}`}
-          trend={kpis.revenueChange}
-          trendLabel="vs last month"
-          icon={DollarSign}
-          accentColor="var(--color-success)"
-        >
-          <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={revenueTrend} margin={{ top: 4, right: 4, bottom: 0, left: 4 }}>
-              <defs>
-                <linearGradient id="gRevenue" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="var(--color-success)" stopOpacity={0.25} />
-                  <stop offset="100%" stopColor="var(--color-success)" stopOpacity={0} />
-                </linearGradient>
-                <linearGradient id="gForecast" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="var(--color-accent)" stopOpacity={0.15} />
-                  <stop offset="100%" stopColor="var(--color-accent)" stopOpacity={0.0} />
-                </linearGradient>
-              </defs>
-              <Tooltip content={<MiniTooltip valuePrefix="$" />} cursor={false} />
-              
-              {/* Historical Revenue */}
-              <Area
-                name="Historical"
-                type="monotone"
-                dataKey="value"
-                stroke="var(--color-success)"
-                strokeWidth={2}
-                fill="url(#gRevenue)"
-                dot={false}
-                activeDot={{ r: 3, fill: 'var(--color-success)' }}
-              />
+            <KPICard title="Active Leads" value="92" trend="+4" trendDirection="up">
+              <BarChart data={LEADS_DATA} margin={{ top: 5, right: 0, left: 0, bottom: 0 }}>
+                <Tooltip content={<CustomTooltip />} cursor={{ fill: '#1e293b' }} />
+                <Bar dataKey="count" fill="#6366f1" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </KPICard>
 
-              {/* AI Forecast Trendline */}
-              <Area
-                name="AI Forecast"
-                type="monotone"
-                dataKey="forecastValue"
-                stroke="var(--color-accent)"
-                strokeWidth={2}
-                strokeDasharray="4 4"
-                fill="none"
-                dot={false}
-                activeDot={{ r: 3, fill: 'var(--color-accent)' }}
-              />
-
-              {/* AI Forecast Confidence Band */}
-              <Area
-                name="Confidence Range"
-                type="monotone"
-                dataKey="forecastBand"
-                stroke="none"
-                fill="url(#gForecast)"
-                activeDot={false}
-              />
-            </AreaChart>
-          </ResponsiveContainer>
-        </KPICard>
-
-        {/* ---- Active Leads ---- */}
-        <KPICard
-          title="Active Leads"
-          value={kpis.activeLeads}
-          trend={kpis.leadsChange}
-          trendLabel="vs last month"
-          icon={Target}
-          accentColor="var(--color-accent)"
-        >
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={leadsByStage} margin={{ top: 4, right: 4, bottom: 0, left: 4 }}>
-              <Tooltip content={<MiniTooltip />} cursor={{ fill: 'var(--color-bg-hover)', radius: 4 }} />
-              <Bar
-                name="Leads"
-                dataKey="count"
-                radius={[4, 4, 0, 0]}
-                fill="var(--color-accent)"
-                fillOpacity={0.7}
-                activeBar={{ fillOpacity: 1 }}
-              />
-            </BarChart>
-          </ResponsiveContainer>
-        </KPICard>
-
-        {/* ---- Conversion Rate ---- */}
-        <KPICard
-          title="Conversion Rate"
-          value={`${kpis.conversionRate}%`}
-          trend={kpis.conversionChange}
-          trendLabel="Recent trend"
-          icon={TrendingUp}
-          accentColor="var(--color-warning)"
-        >
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={conversionTrend} margin={{ top: 4, right: 4, bottom: 0, left: 4 }}>
-              <Tooltip content={<MiniTooltip valueSuffix="%" />} cursor={false} />
-              <Line
-                name="Rate"
-                type="monotone"
-                dataKey="rate"
-                stroke="var(--color-warning)"
-                strokeWidth={2}
-                dot={false}
-                activeDot={{ r: 3, fill: 'var(--color-warning)' }}
-              />
-            </LineChart>
-          </ResponsiveContainer>
-        </KPICard>
-
-        {/* ---- Customer Health ---- */}
-        <KPICard
-          title="Customer Health"
-          value={`${kpis.avgHealthScore}/100`}
-          trend={kpis.healthChange}
-          trendLabel="vs last month"
-          icon={HeartPulse}
-          accentColor="var(--color-accent)"
-        >
-          <ResponsiveContainer width="100%" height="100%">
-            <RadialBarChart
-              cx="50%"
-              cy="50%"
-              innerRadius="70%"
-              outerRadius="100%"
-              barSize={10}
-              data={healthData}
-              startAngle={210}
-              endAngle={-30}
-            >
-              <PolarAngleAxis type="number" domain={[0, 100]} angleAxisId={0} tick={false} />
-              <RadialBar
-                background={{ fill: 'var(--color-bg-elevated)' }}
-                dataKey="value"
-                cornerRadius={6}
-                angleAxisId={0}
-              />
-              <text
-                x="50%"
-                y="50%"
-                textAnchor="middle"
-                dominantBaseline="middle"
-                className="text-xl font-bold"
-                fill="var(--color-text-primary)"
+            <KPICard title="Customer Health" value="85 / 100" trend="+2.1" trendDirection="up">
+              <RadialBarChart 
+                cx="50%" cy="50%" innerRadius="70%" outerRadius="100%" 
+                barSize={8} data={[{ name: 'Health', value: customerHealth }]} 
+                startAngle={180} endAngle={0}
               >
-                {kpis.avgHealthScore}
-              </text>
-            </RadialBarChart>
-          </ResponsiveContainer>
-        </KPICard>
+                <PolarAngleAxis type="number" domain={[0, 100]} angleAxisId={0} tick={false} />
+                <RadialBar
+                  minAngle={15}
+                  background={{ fill: '#1e293b' }}
+                  clockWise
+                  dataKey="value"
+                  cornerRadius={4}
+                  fill={customerHealth >= 80 ? '#22c55e' : customerHealth >= 50 ? '#eab308' : '#ef4444'}
+                />
+              </RadialBarChart>
+            </KPICard>
 
-      </div>
+            <KPICard title="Win Rate" value="32.4%" trend="-1.2%" trendDirection="down">
+              <AreaChart data={[...REVENUE_DATA].reverse()} margin={{ top: 5, right: 0, left: 0, bottom: 0 }}>
+                 <defs>
+                  <linearGradient id="colorWin" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#ef4444" stopOpacity={0.3} />
+                    <stop offset="95%" stopColor="#ef4444" stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <Tooltip content={<CustomTooltip />} cursor={false} />
+                <Area 
+                  type="monotone" 
+                  dataKey="value" 
+                  stroke="#ef4444" 
+                  strokeWidth={2}
+                  fill="url(#colorWin)" 
+                />
+              </AreaChart>
+            </KPICard>
+          </div>
+
+          {/* Bottom Section */}
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+            
+            {/* Revenue vs Target */}
+            <div className="col-span-1 flex flex-col rounded-xl border border-border bg-base-elevated p-6 shadow-sm lg:col-span-2">
+              <div className="mb-6">
+                <h3 className="text-lg font-bold text-text-primary">Revenue vs. Target</h3>
+                <p className="text-sm text-text-secondary">Monthly performance against sales goals.</p>
+              </div>
+              <div className="h-[300px] w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <ComposedChart data={TARGET_DATA} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#1e293b" />
+                    <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 12 }} dy={10} />
+                    <YAxis axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 12 }} tickFormatter={(val) => `$${val / 1000}k`} />
+                    <Tooltip content={<CustomTooltip />} cursor={{ fill: '#1e293b' }} />
+                    <Legend wrapperStyle={{ paddingTop: '20px' }} iconType="circle" />
+                    <Bar name="Target Revenue" dataKey="target" fill="#334155" radius={[4, 4, 0, 0]} maxBarSize={40} />
+                    <Line name="Actual Revenue" type="monotone" dataKey="actual" stroke="#3b82f6" strokeWidth={3} dot={{ r: 4, fill: '#3b82f6', strokeWidth: 0 }} activeDot={{ r: 6, strokeWidth: 0 }} />
+                  </ComposedChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+
+            {/* Recent Activity */}
+            <div className="col-span-1 rounded-xl border border-border bg-base-elevated p-6 shadow-sm">
+              <div className="mb-6 flex items-center justify-between">
+                <div>
+                  <h3 className="text-lg font-bold text-text-primary">Recent Activity</h3>
+                  <p className="text-sm text-text-secondary">Latest team actions.</p>
+                </div>
+                <Activity size={18} className="text-text-secondary" />
+              </div>
+              <div className="relative pl-3">
+                <div className="absolute left-[15px] top-2 h-[calc(100%-24px)] w-px bg-border" />
+                <ul className="space-y-6">
+                  {MOCK_ACTIVITY.map((activity) => (
+                    <li key={activity.id} className="relative pl-6">
+                      <div className="absolute -left-[9px] top-1 flex h-6 w-6 items-center justify-center rounded-full border-2 border-base-elevated bg-accent text-[10px] font-bold text-white shadow-sm">
+                        {activity.user}
+                      </div>
+                      <div className="flex flex-col">
+                        <span className="text-sm font-medium text-text-primary">
+                          {activity.action}
+                        </span>
+                        <span className="text-xs text-text-secondary">
+                          {activity.time}
+                        </span>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+
+          </div>
+        </>
+      )}
     </div>
   );
 }
