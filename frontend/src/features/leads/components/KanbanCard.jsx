@@ -5,11 +5,13 @@ import { Draggable } from '@hello-pangea/dnd';
    Score → tier mapping for visual badge
    -------------------------------------------------------------------------- */
 
-function scoreTier(score) {
-  if (score == null) return { label: '—', color: 'bg-base-elevated text-text-secondary' };
-  if (score >= 70) return { label: 'Hot', color: 'bg-[var(--color-danger-muted)] text-danger' };
-  if (score >= 40) return { label: 'Warm', color: 'bg-[var(--color-warning-muted)] text-warning' };
-  return { label: 'Cold', color: 'bg-[var(--color-info-muted)] text-[var(--color-info)]' };
+function getTierStyling(tier) {
+  switch (tier?.toLowerCase()) {
+    case 'hot': return { label: 'Hot', color: 'bg-red-500/15 text-red-500 border border-red-500/20' };
+    case 'warm': return { label: 'Warm', color: 'bg-yellow-500/15 text-yellow-500 border border-yellow-500/20' };
+    case 'cold': return { label: 'Cold', color: 'bg-blue-500/15 text-blue-500 border border-blue-500/20' };
+    default: return { label: '—', color: 'bg-base-elevated text-text-secondary border border-border' };
+  }
 }
 
 /**
@@ -21,7 +23,9 @@ function scoreTier(score) {
  * }} props
  */
 export default function KanbanCard({ lead, index }) {
-  const tier = scoreTier(lead.score);
+  const displayScore = lead.ai_score ?? lead.score;
+  const rawTier = lead.ai_tier ?? (displayScore >= 70 ? 'Hot' : displayScore >= 40 ? 'Warm' : displayScore != null ? 'Cold' : null);
+  const tier = getTierStyling(rawTier);
 
   const initials = lead.assigned_name
     ? lead.assigned_name
@@ -60,7 +64,7 @@ export default function KanbanCard({ lead, index }) {
           <div className="flex items-center gap-2 flex-wrap">
             {/* Score badge */}
             <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-2xs font-semibold ${tier.color}`}>
-              {lead.score != null ? `${lead.score} · ${tier.label}` : tier.label}
+              {displayScore != null ? `${displayScore} · ${tier.label}` : tier.label}
             </span>
 
             {/* Value */}

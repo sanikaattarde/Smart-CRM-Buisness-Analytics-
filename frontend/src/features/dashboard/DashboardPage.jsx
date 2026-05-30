@@ -18,48 +18,21 @@ import api from '../../services/api';
 function MiniTooltip({ active, payload, valuePrefix = '', valueSuffix = '' }) {
   if (!active || !payload?.length) return null;
   return (
-    <div className="rounded-md border border-border bg-base-elevated px-2.5 py-1.5 shadow-lg text-xs">
-      <span className="font-semibold text-text-primary">
-        {valuePrefix}{payload[0].value?.toLocaleString()}{valueSuffix}
-      </span>
+    <div className="rounded-md border border-border bg-base-elevated px-2.5 py-1.5 shadow-lg text-xs space-y-1">
+      {payload.map((p, i) => {
+        // Hide the confidence band from the tooltip
+        if (p.name === 'Confidence Range') return null;
+        return (
+          <div key={i} className="flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full" style={{ backgroundColor: p.color || p.fill }} />
+            <span className="font-semibold text-text-primary">
+              {p.name}: {valuePrefix}{p.value?.toLocaleString()}{valueSuffix}
+            </span>
+          </div>
+        );
+      })}
     </div>
   );
-}
-
-/* --------------------------------------------------------------------------
-   Seed / mock data generators (used when backend is unavailable)
-   -------------------------------------------------------------------------- */
-
-function generateRevenueTrend() {
-  const data = [];
-  let base = 85000;
-  for (let i = 29; i >= 0; i--) {
-    base += Math.round((Math.random() - 0.4) * 3000);
-    const d = new Date();
-    d.setDate(d.getDate() - i);
-    data.push({ day: d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }), value: Math.max(base, 50000) });
-  }
-  return data;
-}
-
-function generateLeadsByStage() {
-  return [
-    { stage: 'New', count: 18 },
-    { stage: 'Contacted', count: 14 },
-    { stage: 'Qualified', count: 9 },
-    { stage: 'Proposal', count: 6 },
-    { stage: 'Closed', count: 3 },
-  ];
-}
-
-function generateConversionTrend() {
-  const data = [];
-  for (let i = 11; i >= 0; i--) {
-    const d = new Date();
-    d.setDate(d.getDate() - i * 7);
-    data.push({ week: `W${12 - i}`, rate: +(18 + Math.random() * 12).toFixed(1) });
-  }
-  return data;
 }
 
 /* --------------------------------------------------------------------------
@@ -79,41 +52,58 @@ export default function DashboardPage() {
 
     async function fetchDashboard() {
       try {
-        const { data } = await api.get('/analytics/dashboard');
+        const [kpisRes, revenueRes, funnelRes, forecastRes] = await Promise.all([
+          api.get('/analytics/kpis'),
+          api.get('/analytics/revenue-trend'),
+          api.get('/analytics/lead-funnel'),
+          api.get('/analytics/forecast').catch(() => ({ data: { data: null } }))
+        ]);
+
         if (cancelled) return;
 
-        const d = data.data;
+        const kpisData = kpisRes.data.data || {};
         setKpis({
-          totalRevenue: d.total_revenue ?? 142580,
-          revenueChange: d.revenue_change ?? 12.4,
-          activeLeads: d.active_leads ?? 50,
-          leadsChange: d.leads_change ?? 8.2,
-          conversionRate: d.conversion_rate ?? 24.3,
-          conversionChange: d.conversion_change ?? 3.1,
-          avgHealthScore: d.avg_health_score ?? 72,
-          healthChange: d.health_change ?? -1.8,
+          totalRevenue: kpisData.total_revenue ?? 0,
+          revenueChange: kpisData.revenue_change ?? 0,
+          activeLeads: kpisData.active_leads ?? 0,
+          leadsChange: kpisData.leads_change ?? 0,
+          conversionRate: kpisData.conversion_rate ?? 0,
+          conversionChange: kpisData.conversion_change ?? 0,
+          avgHealthScore: kpisData.avg_health_score ?? 0,
+          healthChange: kpisData.health_change ?? 0,
         });
-        setRevenueTrend(d.revenue_trend ?? generateRevenueTrend());
-        setLeadsByStage(d.leads_by_stage ?? generateLeadsByStage());
-        setConversionTrend(d.conversion_trend ?? generateConversionTrend());
-        setHealthScore(d.avg_health_score ?? 72);
-      } catch {
-        // Fallback to demo data so the dashboard is always visually functional.
-        if (cancelled) return;
-        setKpis({
-          totalRevenue: 142580,
-          revenueChange: 12.4,
-          activeLeads: 50,
-          leadsChange: 8.2,
-          conversionRate: 24.3,
-          conversionChange: 3.1,
-          avgHealthScore: 72,
-          healthChange: -1.8,
-        });
-        setRevenueTrend(generateRevenueTrend());
-        setLeadsByStage(generateLeadsByStage());
-        setConversionTrend(generateConversionTrend());
-        setHealthScore(72);
+
+        // The historical revenue array
+        let revData = revenueRes.data.data || [];
+        
+        // ML Forecast Overlay
+        const forecastData = forecastRes.data.data;
+        if (forecastData && forecastData.forecast && revData.length > 0) {
+          const lastPoint = revData[revData.length - 1];
+          // Anchor the forecast lines to the last historical point
+          lastPoint.forecastValue = lastPoint.value;
+          lastPoint.forecastBand = [lastPoint.value, lastPoint.value];
+
+          // Append future projection
+          revData.push({
+            day: 'Forecast',
+            forecastValue: forecastData.forecast,
+            forecastBand: forecastData.range || [forecastData.forecast * 0.9, forecastData.forecast * 1.1]
+          });
+        }
+        
+        setRevenueTrend(revData);
+        setLeadsByStage(funnelRes.data.data || []);
+        
+        // Static conversion trend since backend doesn't provide it yet
+        setConversionTrend([
+          { week: 'W1', rate: 21 }, { week: 'W2', rate: 22 }, { week: 'W3', rate: 23 },
+          { week: 'W4', rate: Math.round(kpisData.conversion_rate || 24) }
+        ]);
+        
+        setHealthScore(kpisData.avg_health_score ?? 0);
+      } catch (err) {
+        console.error('Failed to fetch dashboard data', err);
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -123,13 +113,12 @@ export default function DashboardPage() {
     return () => { cancelled = true; };
   }, []);
 
-  // RadialBar needs data as an array
   const healthData = useMemo(
     () => [{ name: 'Health', value: healthScore, fill: 'var(--color-accent)' }],
     [healthScore]
   );
 
-  if (loading) {
+  if (loading || !kpis) {
     return (
       <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-4">
         {Array.from({ length: 4 }).map((_, i) => (
@@ -141,16 +130,14 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6 animate-fade-in">
-      {/* Section title */}
       <div>
         <h2 className="text-sm font-medium text-text-secondary mb-1">Overview</h2>
         <p className="text-xs text-text-muted">Real-time business metrics</p>
       </div>
 
-      {/* KPI Grid */}
       <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-4">
 
-        {/* ---- Total Revenue ---- */}
+        {/* ---- Total Revenue & AI Forecast ---- */}
         <KPICard
           title="Total Revenue"
           value={`$${kpis.totalRevenue.toLocaleString()}`}
@@ -166,9 +153,16 @@ export default function DashboardPage() {
                   <stop offset="0%" stopColor="var(--color-success)" stopOpacity={0.25} />
                   <stop offset="100%" stopColor="var(--color-success)" stopOpacity={0} />
                 </linearGradient>
+                <linearGradient id="gForecast" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="var(--color-accent)" stopOpacity={0.15} />
+                  <stop offset="100%" stopColor="var(--color-accent)" stopOpacity={0.0} />
+                </linearGradient>
               </defs>
               <Tooltip content={<MiniTooltip valuePrefix="$" />} cursor={false} />
+              
+              {/* Historical Revenue */}
               <Area
+                name="Historical"
                 type="monotone"
                 dataKey="value"
                 stroke="var(--color-success)"
@@ -176,6 +170,29 @@ export default function DashboardPage() {
                 fill="url(#gRevenue)"
                 dot={false}
                 activeDot={{ r: 3, fill: 'var(--color-success)' }}
+              />
+
+              {/* AI Forecast Trendline */}
+              <Area
+                name="AI Forecast"
+                type="monotone"
+                dataKey="forecastValue"
+                stroke="var(--color-accent)"
+                strokeWidth={2}
+                strokeDasharray="4 4"
+                fill="none"
+                dot={false}
+                activeDot={{ r: 3, fill: 'var(--color-accent)' }}
+              />
+
+              {/* AI Forecast Confidence Band */}
+              <Area
+                name="Confidence Range"
+                type="monotone"
+                dataKey="forecastBand"
+                stroke="none"
+                fill="url(#gForecast)"
+                activeDot={false}
               />
             </AreaChart>
           </ResponsiveContainer>
@@ -194,6 +211,7 @@ export default function DashboardPage() {
             <BarChart data={leadsByStage} margin={{ top: 4, right: 4, bottom: 0, left: 4 }}>
               <Tooltip content={<MiniTooltip />} cursor={{ fill: 'var(--color-bg-hover)', radius: 4 }} />
               <Bar
+                name="Leads"
                 dataKey="count"
                 radius={[4, 4, 0, 0]}
                 fill="var(--color-accent)"
@@ -209,7 +227,7 @@ export default function DashboardPage() {
           title="Conversion Rate"
           value={`${kpis.conversionRate}%`}
           trend={kpis.conversionChange}
-          trendLabel="12-week trend"
+          trendLabel="Recent trend"
           icon={TrendingUp}
           accentColor="var(--color-warning)"
         >
@@ -217,6 +235,7 @@ export default function DashboardPage() {
             <LineChart data={conversionTrend} margin={{ top: 4, right: 4, bottom: 0, left: 4 }}>
               <Tooltip content={<MiniTooltip valueSuffix="%" />} cursor={false} />
               <Line
+                name="Rate"
                 type="monotone"
                 dataKey="rate"
                 stroke="var(--color-warning)"

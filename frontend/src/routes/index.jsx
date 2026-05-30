@@ -4,6 +4,7 @@ import AppLayout from '../components/layout/AppLayout';
 import DashboardPage from '../features/dashboard/DashboardPage';
 import LeadPipelinePage from '../features/leads/LeadPipelinePage';
 import LoginPage from '../features/auth/LoginPage';
+import InsightsPage from '../features/insights/InsightsPage';
 import CustomersPage from '../features/customers/CustomersPage';
 import TasksPage from '../features/tasks/TasksPage';
 /* --------------------------------------------------------------------------
@@ -46,7 +47,7 @@ const router = createBrowserRouter([
       { path: 'customers/:id', element: <PlaceholderPage title="Customer Detail" /> },
       { path: 'leads', element: <LeadPipelinePage /> },
       { path: 'tasks', element: <TasksPage /> },
-      { path: 'insights', element: <PlaceholderPage title="AI Insights" /> },
+      { path: 'insights', element: <InsightsPage /> },
       { path: 'settings', element: <PlaceholderPage title="Settings" /> },
     ],
   },

@@ -43,8 +43,35 @@ const getLeadFunnel = async (req, res, next) => {
   }
 };
 
+const getInsights = async (req, res, next) => {
+  try {
+    const mlClient = require('../../shared/mlServiceClient');
+    const insights = await mlClient.getInsights();
+    return success(res, insights, 'AI insights retrieved.');
+  } catch (err) {
+    next(err);
+  }
+};
+
+const getForecast = async (req, res, next) => {
+  try {
+    const mlClient = require('../../shared/mlServiceClient');
+    // For demo/prototype, use mock features or simple aggregation
+    const forecast = await mlClient.predictRevenue(req.user.org_id, {
+      avg_monthly_revenue: 140000,
+      pipeline_value: 50000,
+      headcount: 12
+    });
+    return success(res, forecast, 'AI revenue forecast retrieved.');
+  } catch (err) {
+    next(err);
+  }
+};
+
 module.exports = {
   getDashboardKPIs,
   getRevenueTrend,
-  getLeadFunnel
+  getLeadFunnel,
+  getInsights,
+  getForecast
 };

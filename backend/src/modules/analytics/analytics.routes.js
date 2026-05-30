@@ -13,5 +13,7 @@ router.use(authenticate);
 router.get('/kpis', controller.getDashboardKPIs);
 router.get('/revenue-trend', revenueTrendQueryValidator, controller.getRevenueTrend);
 router.get('/lead-funnel', controller.getLeadFunnel);
+router.get('/insights', controller.getInsights);
+router.get('/forecast', controller.getForecast);
 
 module.exports = router;
