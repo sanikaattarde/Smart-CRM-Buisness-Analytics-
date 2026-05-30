@@ -4,6 +4,8 @@ import AppLayout from '../components/layout/AppLayout';
 import DashboardPage from '../features/dashboard/DashboardPage';
 import LeadPipelinePage from '../features/leads/LeadPipelinePage';
 import LoginPage from '../features/auth/LoginPage';
+import CustomersPage from '../features/customers/CustomersPage';
+import TasksPage from '../features/tasks/TasksPage';
 /* --------------------------------------------------------------------------
    Placeholder (for pages not yet built)
    -------------------------------------------------------------------------- */
@@ -40,10 +42,10 @@ const router = createBrowserRouter([
     children: [
       { index: true, element: <Navigate to="/dashboard" replace /> },
       { path: 'dashboard', element: <DashboardPage /> },
-      { path: 'customers', element: <PlaceholderPage title="Customers" /> },
+      { path: 'customers', element: <CustomersPage /> },
       { path: 'customers/:id', element: <PlaceholderPage title="Customer Detail" /> },
       { path: 'leads', element: <LeadPipelinePage /> },
-      { path: 'tasks', element: <PlaceholderPage title="Tasks" /> },
+      { path: 'tasks', element: <TasksPage /> },
       { path: 'insights', element: <PlaceholderPage title="AI Insights" /> },
       { path: 'settings', element: <PlaceholderPage title="Settings" /> },
     ],
